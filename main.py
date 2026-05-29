@@ -3,7 +3,13 @@ import signal
 import sys
 from pathlib import Path
 
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
+
+
+def _app_icon() -> QIcon:
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return QIcon(os.path.join(base, 'assets', 'icon.ico'))
 
 PID_FILE = Path.home() / '.alertas_calendario' / 'alertas.pid'
 
@@ -35,6 +41,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Alertas de Calendarios")
     app.setApplicationDisplayName("Alertas de Calendarios — Sofisis")
+    app.setWindowIcon(_app_icon())
     app.setQuitOnLastWindowClosed(False)
 
     # Permitir cierre limpio via señal (Linux) o CTRL+C

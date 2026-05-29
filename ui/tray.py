@@ -1,7 +1,9 @@
+import os
+import sys
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from api.client import Appointment, SofisisClient
@@ -12,22 +14,9 @@ from core.updater import UpdateChecker
 from core.version import __version__
 
 
-def _circle_icon(color: str, size: int = 64) -> QIcon:
-    px = QPixmap(size, size)
-    px.fill(Qt.GlobalColor.transparent)
-    p = QPainter(px)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(QColor(color))
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawEllipse(4, 4, size - 8, size - 8)
-    p.end()
-    return QIcon(px)
-
-
-_ICON_GREY   = '#607D8B'
-_ICON_GREEN  = '#4CAF50'
-_ICON_ORANGE = '#FF9800'
-_ICON_RED    = '#F44336'
+def _app_icon() -> QIcon:
+    base = getattr(sys, '_MEIPASS', os.path.join(os.path.dirname(__file__), '..'))
+    return QIcon(os.path.join(base, 'assets', 'icon.ico'))
 
 
 class TrayApp:
@@ -51,7 +40,7 @@ class TrayApp:
         QTimer.singleShot(15_000, self._start_update_check)  # primera verificación a los 15s
 
         self._tray = QSystemTrayIcon()
-        self._tray.setIcon(_circle_icon(_ICON_GREY))
+        self._tray.setIcon(_app_icon())
         self._tray.setToolTip(f"Alertas de Calendarios — Sofisis  v{__version__}")
         self._tray.setVisible(True)
         self._tray.messageClicked.connect(self._on_notification_clicked)
@@ -168,7 +157,7 @@ class TrayApp:
 
     # ── Alertas ───────────────────────────────────────────────────
     def _on_5min(self, appt: Appointment):
-        self._tray.setIcon(_circle_icon(_ICON_ORANGE))
+        
         from ui.mini_alert import MiniAlert
         self._mini_alert = MiniAlert(appt, self.config.minutes_before_warning)
         self._mini_alert.confirmed.connect(self._on_attendance_confirmed)
@@ -187,7 +176,7 @@ class TrayApp:
         if self._dashboard_window and self._dashboard_window.isVisible():
             self._dashboard_window.hide()
 
-        self._tray.setIcon(_circle_icon(_ICON_RED))
+        
         from ui.alert_window import AlertWindow
         self._alert_window = AlertWindow(appt)
         self._alert_window.confirmed.connect(self._on_attendance_confirmed)
@@ -198,7 +187,7 @@ class TrayApp:
 
     def _on_alert_destroyed(self):
         self._alert_window = None
-        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+        
 
     def _on_attendance_confirmed(self, appt: Appointment):
         try:
@@ -206,11 +195,11 @@ class TrayApp:
             client.confirm_attendance(appt.id)
         except Exception:
             pass
-        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+        
 
     # ── Posponer ──────────────────────────────────────────────────
     def _on_snoozed(self, appt: Appointment, minutes: int):
-        self._tray.setIcon(_circle_icon(_ICON_ORANGE))
+        
         self._tray.showMessage(
             "Evento pospuesto",
             f"⏸ Se recordará en {minutes} minuto{'s' if minutes != 1 else ''}.",
@@ -242,7 +231,7 @@ class TrayApp:
                 QSystemTrayIcon.MessageIcon.Critical,
                 8_000,
             )
-        self._tray.setIcon(_circle_icon(_ICON_GREY))
+        
 
     # ── Auto-update ───────────────────────────────────────────────
     def _start_update_check(self) -> None:
@@ -307,12 +296,12 @@ class TrayApp:
 
     # ── Estado ────────────────────────────────────────────────────
     def _on_error(self, msg: str):
-        self._tray.setIcon(_circle_icon(_ICON_GREY))
+        
         self._status_item.setText(f"⬤  Error: {msg[:70]}")
         self._tray.setToolTip(f"Alertas — Error de conexión")
 
     def _on_ok(self, event_count: int):
         hora = datetime.now().strftime('%H:%M')
         self._status_item.setText(f"⬤  Activo — {event_count} eventos hoy ({hora})")
-        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+        
         self._tray.setToolTip(f"Alertas de Calendarios — {event_count} eventos hoy")
