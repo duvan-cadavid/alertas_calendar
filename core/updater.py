@@ -15,6 +15,7 @@ def _parse(v: str) -> tuple:
 
 class UpdateChecker(QThread):
     update_available = pyqtSignal(str, str)  # latest_version, html_url
+    check_done       = pyqtSignal()          # emitido siempre al terminar
 
     def run(self) -> None:
         try:
@@ -23,12 +24,13 @@ class UpdateChecker(QThread):
                 timeout=10,
                 headers={"Accept": "application/vnd.github+json"},
             )
-            if resp.status_code != 200:
-                return
-            data = resp.json()
-            latest_tag = data.get("tag_name", "")
-            latest_ver = latest_tag.lstrip("v")
-            if _parse(latest_ver) > _parse(__version__):
-                self.update_available.emit(latest_ver, data.get("html_url", ""))
+            if resp.status_code == 200:
+                data = resp.json()
+                latest_tag = data.get("tag_name", "")
+                latest_ver = latest_tag.lstrip("v")
+                if _parse(latest_ver) > _parse(__version__):
+                    self.update_available.emit(latest_ver, data.get("html_url", ""))
         except Exception:
             pass
+        finally:
+            self.check_done.emit()

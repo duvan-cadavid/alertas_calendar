@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import (
 
 from api.client import Appointment, SofisisClient
 from config.settings import Config
+from core.updater import UpdateChecker
+from core.version import __version__
 
 _MONTHS = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -29,6 +31,13 @@ QPushButton#refresh_btn {
     padding: 8px 20px; font-size: 13px;
 }
 QPushButton#refresh_btn:hover { background-color: #313244; }
+QPushButton#update_btn {
+    background-color: #1e1e2e; color: #6c7086;
+    border: 1px solid #313244; border-radius: 8px;
+    padding: 8px 20px; font-size: 13px;
+}
+QPushButton#update_btn:hover:enabled { background-color: #313244; }
+QPushButton#update_btn:disabled { color: #45475a; }
 QScrollArea { border: none; background: transparent; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 """
@@ -213,6 +222,9 @@ class DashboardWindow(QWidget):
         self._config = config
         self._client = SofisisClient(config.server_url, config.api_token)
         self._thread: _FetchThread | None = None
+        self._update_checker: UpdateChecker | None = None
+        self._update_url: str = ""
+        self._update_btn: QPushButton | None = None
 
         self.setWindowTitle("Agenda de Hoy — Alertas de Calendarios")
         self.setMinimumSize(860, 600)
@@ -244,6 +256,12 @@ class DashboardWindow(QWidget):
         header.addLayout(left)
         header.addStretch()
 
+        self._update_btn = QPushButton(f"⬆  Buscar actualizaciones  v{__version__}")
+        self._update_btn.setObjectName('update_btn')
+        self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_btn.clicked.connect(self._check_for_updates)
+        header.addWidget(self._update_btn)
+
         refresh = QPushButton("↻  Actualizar")
         refresh.setObjectName('refresh_btn')
         refresh.clicked.connect(self._load)
@@ -273,6 +291,45 @@ class DashboardWindow(QWidget):
         self._footer.setStyleSheet("color: #45475a; font-size: 11px;")
         self._footer.setAlignment(Qt.AlignmentFlag.AlignRight)
         root.addWidget(self._footer)
+
+    def _check_for_updates(self) -> None:
+        if self._update_url:
+            import webbrowser
+            webbrowser.open(self._update_url)
+            return
+        if self._update_checker and self._update_checker.isRunning():
+            return
+        self._update_btn.setText("Verificando...")
+        self._update_btn.setEnabled(False)
+        self._update_checker = UpdateChecker()
+        self._update_checker.update_available.connect(self._on_update_found)
+        self._update_checker.check_done.connect(self._on_check_done)
+        self._update_checker.start()
+
+    def _on_update_found(self, version: str, url: str) -> None:
+        self._update_url = url
+        self._update_btn.setText(f"🔄  v{version} disponible — Descargar")
+        self._update_btn.setEnabled(True)
+        self._update_btn.setStyleSheet(
+            "QPushButton#update_btn { background-color: #2e1a06; color: #fb923c;"
+            " border: 1px solid #fb923c; border-radius: 8px; padding: 8px 20px; font-size: 13px; }"
+            "QPushButton#update_btn:hover { background-color: #3d2209; }"
+        )
+
+    def _on_check_done(self) -> None:
+        if self._update_url:
+            return
+        self._update_btn.setText("✓  Versión actualizada")
+        self._update_btn.setStyleSheet(
+            "QPushButton#update_btn { background-color: #0a2e1a; color: #4ade80;"
+            " border: 1px solid #4ade80; border-radius: 8px; padding: 8px 20px; font-size: 13px; }"
+        )
+        QTimer.singleShot(3_000, self._reset_update_btn)
+
+    def _reset_update_btn(self) -> None:
+        self._update_btn.setText(f"⬆  Buscar actualizaciones  v{__version__}")
+        self._update_btn.setStyleSheet("")
+        self._update_btn.setEnabled(True)
 
     def _load(self):
         if self._thread and self._thread.isRunning():
