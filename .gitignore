@@ -18,9 +18,6 @@ token.json
 *.pickle
 client_secret*.json
 
-# Ícono generado (se crea durante el build)
-assets/icon.ico
-
 # IDEs
 .idea/
 .vscode/

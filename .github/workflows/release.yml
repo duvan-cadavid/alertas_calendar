@@ -49,9 +49,6 @@ jobs:
             -replace '__version__ = ".*"', "__version__ = `"$v`"" |
           Set-Content core\version.py
 
-      - name: Generar icon.ico
-        run: python build/create_icon_win.py
-
       - name: Build con PyInstaller
         run: pyinstaller build/alertas.spec --noconfirm --clean
 
