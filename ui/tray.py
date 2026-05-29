@@ -1,0 +1,242 @@
+from datetime import datetime
+
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QColor
+from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+
+from api.client import Appointment, SofisisClient
+from config.settings import Config
+from core.scheduler import EventScheduler
+
+
+def _circle_icon(color: str, size: int = 64) -> QIcon:
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(QColor(color))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawEllipse(4, 4, size - 8, size - 8)
+    p.end()
+    return QIcon(px)
+
+
+_ICON_GREY   = '#607D8B'
+_ICON_GREEN  = '#4CAF50'
+_ICON_ORANGE = '#FF9800'
+_ICON_RED    = '#F44336'
+
+
+class TrayApp:
+    def __init__(self, config: Config, app: QApplication):
+        self.config = config
+        self._app = app
+        self._scheduler: EventScheduler | None = None
+        self._alert_window = None
+        self._mini_alert   = None
+        self._settings_window  = None
+        self._dashboard_window = None
+        self._snooze_timer: QTimer | None = None
+
+        self._tray = QSystemTrayIcon()
+        self._tray.setIcon(_circle_icon(_ICON_GREY))
+        self._tray.setToolTip("Alertas de Calendarios — Sofisis")
+        self._tray.setVisible(True)
+        self._setup_menu()
+
+    # ── Menú ──────────────────────────────────────────────────────
+    def _setup_menu(self):
+        menu = QMenu()
+
+        self._status_item = menu.addAction("⬤  Sin configurar")
+        self._status_item.setEnabled(False)
+
+        menu.addSeparator()
+        menu.addAction("📅  Ver agenda de hoy",      self.show_dashboard)
+        menu.addAction("🔔  Probar alerta ahora",     self._test_alert)
+        menu.addSeparator()
+        menu.addAction("⚙  Configuración",           self.show_settings)
+        menu.addSeparator()
+        import sys
+        if sys.platform == 'win32':
+            menu.addAction("✕  Cerrar aplicación", self._app.quit)
+        else:
+            lock = menu.addAction("🔒  Para cerrar: ./detener.sh")
+            lock.setEnabled(False)
+
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_tray_activated)
+
+    # ── Navegación ────────────────────────────────────────────────
+    def _on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show_dashboard()
+
+    def show_dashboard(self, fullscreen: bool = False):
+        if self._dashboard_window and self._dashboard_window.isVisible():
+            self._dashboard_window.raise_()
+            self._dashboard_window.activateWindow()
+            return
+        if not self.config.is_configured():
+            self.show_settings()
+            return
+        from ui.dashboard_window import DashboardWindow
+        self._dashboard_window = DashboardWindow(self.config)
+        self._show_on_primary(self._dashboard_window, maximized=fullscreen)
+
+    @staticmethod
+    def _show_on_primary(window, maximized: bool = False):
+        """Muestra la ventana ocupando el 100% del monitor primario."""
+        screen = QApplication.primaryScreen()
+        geo = screen.availableGeometry()
+        window.setGeometry(geo)
+        window.show()
+
+    def show_settings(self):
+        if self._settings_window and self._settings_window.isVisible():
+            self._settings_window.raise_()
+            return
+        from ui.login_window import SettingsWindow
+        self._settings_window = SettingsWindow(self.config, self._on_config_saved)
+        self._settings_window.show()
+
+    # ── Prueba manual ─────────────────────────────────────────────
+    def _test_alert(self):
+        """Dispara inmediatamente una alerta de prueba con el próximo evento del día."""
+        if not self.config.is_configured():
+            self.show_settings()
+            return
+        try:
+            client = SofisisClient(self.config.server_url, self.config.api_token)
+            appointments = client.get_today_appointments(self.config.user_id)
+            now = datetime.now().astimezone()
+            # Buscar el siguiente evento futuro o el más cercano
+            future = [a for a in appointments if a.start_date >= now]
+            target = future[0] if future else (appointments[0] if appointments else None)
+            if target:
+                self._show_alert(target)
+            else:
+                self._tray.showMessage(
+                    "Sin eventos",
+                    "No hay eventos agendados para hoy.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    4_000,
+                )
+        except Exception as e:
+            self._tray.showMessage(
+                "Error",
+                str(e),
+                QSystemTrayIcon.MessageIcon.Critical,
+                6_000,
+            )
+
+    # ── Scheduler ─────────────────────────────────────────────────
+    def start_scheduler(self):
+        self._scheduler = EventScheduler(self.config)
+        self._scheduler.five_min_alert.connect(self._on_5min)
+        self._scheduler.event_start_alert.connect(self._on_start)
+        self._scheduler.connection_error.connect(self._on_error)
+        self._scheduler.connection_ok.connect(self._on_ok)
+        self._scheduler.start()
+
+    def stop_scheduler(self):
+        if self._scheduler:
+            self._scheduler.stop()
+            self._scheduler = None
+
+    def _on_config_saved(self, new_config: Config):
+        self.config = new_config
+        if self._scheduler:
+            self._scheduler.restart(new_config)
+        else:
+            self.start_scheduler()
+
+    # ── Alertas ───────────────────────────────────────────────────
+    def _on_5min(self, appt: Appointment):
+        self._tray.setIcon(_circle_icon(_ICON_ORANGE))
+        from ui.mini_alert import MiniAlert
+        self._mini_alert = MiniAlert(appt, self.config.minutes_before_warning)
+        self._mini_alert.confirmed.connect(self._on_attendance_confirmed)
+        self._mini_alert.destroyed.connect(lambda: setattr(self, '_mini_alert', None))
+
+    def _on_start(self, appt: Appointment):
+        self._show_alert(appt)
+
+    def _show_alert(self, appt: Appointment):
+        # Ignorar solo si ya hay una alerta visible — no si hay referencia colgante
+        if self._alert_window is not None and self._alert_window.isVisible():
+            return
+        self._alert_window = None  # limpiar referencia colgante si existía
+
+        # Ocultar el dashboard para que no tape la alerta
+        if self._dashboard_window and self._dashboard_window.isVisible():
+            self._dashboard_window.hide()
+
+        self._tray.setIcon(_circle_icon(_ICON_RED))
+        from ui.alert_window import AlertWindow
+        self._alert_window = AlertWindow(appt)
+        self._alert_window.confirmed.connect(self._on_attendance_confirmed)
+        self._alert_window.snoozed.connect(self._on_snoozed)
+        self._alert_window.cancelled.connect(self._on_cancelled)
+        self._alert_window.destroyed.connect(self._on_alert_destroyed)
+        self._alert_window.show()
+
+    def _on_alert_destroyed(self):
+        self._alert_window = None
+        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+
+    def _on_attendance_confirmed(self, appt: Appointment):
+        try:
+            client = SofisisClient(self.config.server_url, self.config.api_token)
+            client.confirm_attendance(appt.id)
+        except Exception:
+            pass
+        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+
+    # ── Posponer ──────────────────────────────────────────────────
+    def _on_snoozed(self, appt: Appointment, minutes: int):
+        self._tray.setIcon(_circle_icon(_ICON_ORANGE))
+        self._tray.showMessage(
+            "Evento pospuesto",
+            f"⏸ Se recordará en {minutes} minuto{'s' if minutes != 1 else ''}.",
+            QSystemTrayIcon.MessageIcon.Information,
+            4_000,
+        )
+        if self._snooze_timer:
+            self._snooze_timer.stop()
+        self._snooze_timer = QTimer()
+        self._snooze_timer.setSingleShot(True)
+        self._snooze_timer.timeout.connect(lambda: self._show_alert(appt))
+        self._snooze_timer.start(minutes * 60 * 1_000)
+
+    # ── Cancelar tarea ────────────────────────────────────────────
+    def _on_cancelled(self, appt: Appointment, new_observations: str):
+        try:
+            client = SofisisClient(self.config.server_url, self.config.api_token)
+            client.update_observations(appt.id, new_observations)
+            self._tray.showMessage(
+                "Tarea cancelada",
+                f"✗ '{appt.text}' marcada como EVENTO CANCELADO.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                6_000,
+            )
+        except Exception as e:
+            self._tray.showMessage(
+                "Error al cancelar",
+                f"No se pudo actualizar la tarea: {e}",
+                QSystemTrayIcon.MessageIcon.Critical,
+                8_000,
+            )
+        self._tray.setIcon(_circle_icon(_ICON_GREY))
+
+    # ── Estado ────────────────────────────────────────────────────
+    def _on_error(self, msg: str):
+        self._tray.setIcon(_circle_icon(_ICON_GREY))
+        self._status_item.setText(f"⬤  Error: {msg[:70]}")
+        self._tray.setToolTip(f"Alertas — Error de conexión")
+
+    def _on_ok(self, event_count: int):
+        hora = datetime.now().strftime('%H:%M')
+        self._status_item.setText(f"⬤  Activo — {event_count} eventos hoy ({hora})")
+        self._tray.setIcon(_circle_icon(_ICON_GREEN))
+        self._tray.setToolTip(f"Alertas de Calendarios — {event_count} eventos hoy")

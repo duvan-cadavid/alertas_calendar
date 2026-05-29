@@ -1,0 +1,87 @@
+name: Build & Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión del instalador (ej: 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determinar versión
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Instalar dependencias Python
+        run: pip install PyQt6 requests pyinstaller pillow
+
+      - name: Generar icon.ico
+        run: python build/create_icon_win.py
+
+      - name: Build con PyInstaller
+        run: pyinstaller build/alertas.spec --noconfirm --clean
+
+      - name: Instalar Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Actualizar versión en instalador
+        shell: powershell
+        run: |
+          $v = "${{ steps.ver.outputs.VERSION }}"
+          (Get-Content build\setup.iss) `
+            -replace '#define AppVersion\s+"[^"]*"', "#define AppVersion `"$v`"" |
+          Set-Content build\setup.iss
+
+      - name: Construir instalador (.exe)
+        shell: powershell
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\setup.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Subir instalador como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: instalador-windows
+          path: dist/installer/*.exe
+          retention-days: 30
+
+      - name: Crear GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || format('v{0}', steps.ver.outputs.VERSION) }}
+          name: "Alertas de Calendarios v${{ steps.ver.outputs.VERSION }}"
+          files: dist/installer/*.exe
+          body: |
+            ## Descarga e instalación
+
+            1. Descarga `Alertas_de_Calendarios_Setup_v${{ steps.ver.outputs.VERSION }}.exe`
+            2. Ejecuta el instalador y sigue el asistente
+            3. La app se inicia en la bandeja del sistema (system tray)
+
+            **Requisitos:** Windows 10 o superior (64-bit)

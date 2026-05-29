@@ -1,0 +1,9 @@
+@echo off
+echo Instalando dependencias...
+pip install --quiet PyQt6 requests pyinstaller pillow
+echo Generando icono...
+python build\create_icon_win.py
+echo Empaquetando...
+pyinstaller build\alertas.spec --noconfirm --clean
+echo Listo. Resultado en dist\
+pause
