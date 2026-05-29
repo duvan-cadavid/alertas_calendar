@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QFrame, QApplication, QTextEdit,
 )
 
+
 from api.client import Appointment
 
 
