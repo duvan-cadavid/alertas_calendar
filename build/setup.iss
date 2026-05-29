@@ -30,7 +30,7 @@ MinVersion=10.0
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
-Name: "startup";    Description: "Iniciar automáticamente al encender el equipo"; GroupDescription: "Opciones adicionales:"; Flags: checked
+Name: "startup";    Description: "Iniciar automáticamente al encender el equipo"; GroupDescription: "Opciones adicionales:"
 Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Opciones adicionales:"; Flags: unchecked
 
 [Files]
