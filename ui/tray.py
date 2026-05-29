@@ -1,3 +1,4 @@
+import webbrowser
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QTimer
@@ -7,6 +8,8 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 from api.client import Appointment, SofisisClient
 from config.settings import Config
 from core.scheduler import EventScheduler
+from core.updater import UpdateChecker
+from core.version import __version__
 
 
 def _circle_icon(color: str, size: int = 64) -> QIcon:
@@ -38,9 +41,17 @@ class TrayApp:
         self._dashboard_window = None
         self._snooze_timer: QTimer | None = None
 
+        self._update_url: str = ""
+        self._update_checker: UpdateChecker | None = None
+        self._update_action = None
+        self._update_timer = QTimer()
+        self._update_timer.timeout.connect(self._start_update_check)
+        self._update_timer.start(6 * 3600 * 1_000)  # re-verificar cada 6 horas
+        QTimer.singleShot(15_000, self._start_update_check)  # primera verificación a los 15s
+
         self._tray = QSystemTrayIcon()
         self._tray.setIcon(_circle_icon(_ICON_GREY))
-        self._tray.setToolTip("Alertas de Calendarios — Sofisis")
+        self._tray.setToolTip(f"Alertas de Calendarios — Sofisis  v{__version__}")
         self._tray.setVisible(True)
         self._setup_menu()
 
@@ -56,6 +67,8 @@ class TrayApp:
         menu.addAction("🔔  Probar alerta ahora",     self._test_alert)
         menu.addSeparator()
         menu.addAction("⚙  Configuración",           self.show_settings)
+        self._update_action = menu.addAction("🔄  Nueva versión disponible", self._open_update_url)
+        self._update_action.setVisible(False)
         menu.addSeparator()
         import sys
         if sys.platform == 'win32':
@@ -228,6 +241,29 @@ class TrayApp:
                 8_000,
             )
         self._tray.setIcon(_circle_icon(_ICON_GREY))
+
+    # ── Auto-update ───────────────────────────────────────────────
+    def _start_update_check(self) -> None:
+        if self._update_checker and self._update_checker.isRunning():
+            return
+        self._update_checker = UpdateChecker()
+        self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.start()
+
+    def _on_update_available(self, version: str, url: str) -> None:
+        self._update_url = url
+        self._update_action.setText(f"🔄  Nueva versión v{version} disponible")
+        self._update_action.setVisible(True)
+        self._tray.showMessage(
+            "Actualización disponible",
+            f"La versión v{version} está lista. Abre el menú para descargar.",
+            QSystemTrayIcon.MessageIcon.Information,
+            8_000,
+        )
+
+    def _open_update_url(self) -> None:
+        if self._update_url:
+            webbrowser.open(self._update_url)
 
     # ── Estado ────────────────────────────────────────────────────
     def _on_error(self, msg: str):

@@ -41,6 +41,14 @@ jobs:
       - name: Instalar dependencias Python
         run: pip install PyQt6 requests pyinstaller pillow
 
+      - name: Escribir versión en core/version.py
+        shell: powershell
+        run: |
+          $v = "${{ steps.ver.outputs.VERSION }}"
+          (Get-Content core\version.py) `
+            -replace '__version__ = ".*"', "__version__ = `"$v`"" |
+          Set-Content core\version.py
+
       - name: Generar icon.ico
         run: python build/create_icon_win.py
 
