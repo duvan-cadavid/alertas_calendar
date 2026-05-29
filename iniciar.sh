@@ -9,3 +9,5 @@ fi
 
 # Ejecutar directamente el Python del venv sin necesitar activarlo
 exec "$PYTHON" "$APP_DIR/main.py"
+
+
