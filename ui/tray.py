@@ -1,4 +1,3 @@
-import webbrowser
 from datetime import datetime
 
 from PyQt6.QtCore import Qt, QTimer
@@ -7,6 +6,7 @@ from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
 from api.client import Appointment, SofisisClient
 from config.settings import Config
+from core.downloader import InstallerDownloader, launch_installer
 from core.scheduler import EventScheduler
 from core.updater import UpdateChecker
 from core.version import __version__
@@ -43,6 +43,7 @@ class TrayApp:
 
         self._update_url: str = ""
         self._update_checker: UpdateChecker | None = None
+        self._downloader: InstallerDownloader | None = None
         self._update_action = None
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self._start_update_check)
@@ -53,6 +54,7 @@ class TrayApp:
         self._tray.setIcon(_circle_icon(_ICON_GREY))
         self._tray.setToolTip(f"Alertas de Calendarios — Sofisis  v{__version__}")
         self._tray.setVisible(True)
+        self._tray.messageClicked.connect(self._on_notification_clicked)
         self._setup_menu()
 
     # ── Menú ──────────────────────────────────────────────────────
@@ -67,7 +69,7 @@ class TrayApp:
         menu.addAction("🔔  Probar alerta ahora",     self._test_alert)
         menu.addSeparator()
         menu.addAction("⚙  Configuración",           self.show_settings)
-        self._update_action = menu.addAction("🔄  Nueva versión disponible", self._open_update_url)
+        self._update_action = menu.addAction("🔄  Nueva versión disponible", self._install_update)
         self._update_action.setVisible(False)
         menu.addSeparator()
         import sys
@@ -252,18 +254,56 @@ class TrayApp:
 
     def _on_update_available(self, version: str, url: str) -> None:
         self._update_url = url
-        self._update_action.setText(f"🔄  Nueva versión v{version} disponible")
+        self._update_action.setText(f"🔄  Instalar v{version}")
         self._update_action.setVisible(True)
         self._tray.showMessage(
-            "Actualización disponible",
-            f"La versión v{version} está lista. Abre el menú para descargar.",
+            f"Actualización disponible — v{version}",
+            "Haz clic aquí para instalar ahora.",
             QSystemTrayIcon.MessageIcon.Information,
             8_000,
         )
 
-    def _open_update_url(self) -> None:
+    def _on_notification_clicked(self) -> None:
         if self._update_url:
-            webbrowser.open(self._update_url)
+            self._install_update()
+
+    def _install_update(self) -> None:
+        if not self._update_url:
+            return
+        if self._downloader and self._downloader.isRunning():
+            return
+        self._update_action.setText("⬇  Descargando...")
+        self._update_action.setEnabled(False)
+        self._tray.showMessage(
+            "Descargando actualización",
+            "Por favor espera, esto puede tardar unos segundos...",
+            QSystemTrayIcon.MessageIcon.Information,
+            5_000,
+        )
+        self._downloader = InstallerDownloader(self._update_url)
+        self._downloader.done.connect(self._on_download_done)
+        self._downloader.error.connect(self._on_download_error)
+        self._downloader.start()
+
+    def _on_download_done(self, path: str) -> None:
+        self._tray.showMessage(
+            "Instalando actualización",
+            "El instalador se abrirá ahora. La app se cerrará para completar la instalación.",
+            QSystemTrayIcon.MessageIcon.Information,
+            4_000,
+        )
+        launch_installer(path)
+        QTimer.singleShot(2_000, self._app.quit)
+
+    def _on_download_error(self, msg: str) -> None:
+        self._update_action.setText("🔄  Reintentar actualización")
+        self._update_action.setEnabled(True)
+        self._tray.showMessage(
+            "Error al descargar",
+            f"No se pudo descargar la actualización: {msg[:80]}",
+            QSystemTrayIcon.MessageIcon.Critical,
+            6_000,
+        )
 
     # ── Estado ────────────────────────────────────────────────────
     def _on_error(self, msg: str):

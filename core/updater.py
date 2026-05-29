@@ -29,7 +29,10 @@ class UpdateChecker(QThread):
                 latest_tag = data.get("tag_name", "")
                 latest_ver = latest_tag.lstrip("v")
                 if _parse(latest_ver) > _parse(__version__):
-                    self.update_available.emit(latest_ver, data.get("html_url", ""))
+                    assets = data.get("assets", [])
+                    exe = next((a for a in assets if a["name"].endswith(".exe")), None)
+                    download_url = exe["browser_download_url"] if exe else data.get("html_url", "")
+                    self.update_available.emit(latest_ver, download_url)
         except Exception:
             pass
         finally:

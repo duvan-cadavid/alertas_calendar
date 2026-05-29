@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
 
 from api.client import Appointment, SofisisClient
 from config.settings import Config
+from core.downloader import InstallerDownloader, launch_installer
 from core.updater import UpdateChecker
 from core.version import __version__
 
@@ -223,6 +224,7 @@ class DashboardWindow(QWidget):
         self._client = SofisisClient(config.server_url, config.api_token)
         self._thread: _FetchThread | None = None
         self._update_checker: UpdateChecker | None = None
+        self._downloader: InstallerDownloader | None = None
         self._update_url: str = ""
         self._update_btn: QPushButton | None = None
 
@@ -294,8 +296,7 @@ class DashboardWindow(QWidget):
 
     def _check_for_updates(self) -> None:
         if self._update_url:
-            import webbrowser
-            webbrowser.open(self._update_url)
+            self._start_download()
             return
         if self._update_checker and self._update_checker.isRunning():
             return
@@ -308,7 +309,7 @@ class DashboardWindow(QWidget):
 
     def _on_update_found(self, version: str, url: str) -> None:
         self._update_url = url
-        self._update_btn.setText(f"🔄  v{version} disponible — Descargar")
+        self._update_btn.setText(f"🔄  v{version} disponible — Instalar")
         self._update_btn.setEnabled(True)
         self._update_btn.setStyleSheet(
             "QPushButton#update_btn { background-color: #2e1a06; color: #fb923c;"
@@ -330,6 +331,30 @@ class DashboardWindow(QWidget):
         self._update_btn.setText(f"⬆  Buscar actualizaciones  v{__version__}")
         self._update_btn.setStyleSheet("")
         self._update_btn.setEnabled(True)
+
+    def _start_download(self) -> None:
+        if self._downloader and self._downloader.isRunning():
+            return
+        self._update_btn.setText("⬇  Descargando...  0%")
+        self._update_btn.setEnabled(False)
+        self._downloader = InstallerDownloader(self._update_url)
+        self._downloader.progress.connect(self._on_download_progress)
+        self._downloader.done.connect(self._on_download_done)
+        self._downloader.error.connect(self._on_download_error)
+        self._downloader.start()
+
+    def _on_download_progress(self, percent: int) -> None:
+        self._update_btn.setText(f"⬇  Descargando...  {percent}%")
+
+    def _on_download_done(self, path: str) -> None:
+        self._update_btn.setText("⚙  Instalando...")
+        launch_installer(path)
+        QTimer.singleShot(1_500, lambda: QApplication.instance().quit())
+
+    def _on_download_error(self, msg: str) -> None:
+        self._update_btn.setText("✗  Error al descargar")
+        self._update_btn.setEnabled(True)
+        QTimer.singleShot(4_000, lambda: self._on_update_found("", self._update_url))
 
     def _load(self):
         if self._thread and self._thread.isRunning():
