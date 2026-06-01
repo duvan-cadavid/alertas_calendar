@@ -116,6 +116,7 @@ class _SegmentThread(QThread):
         self._cmd = cmd
         self._output = output
         self._proc: Optional[subprocess.Popen] = None
+        self._stopping = False
 
     def run(self):
         try:
@@ -123,14 +124,33 @@ class _SegmentThread(QThread):
                 self._cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,   # capturar para diagnóstico
             )
-            self._proc.wait()
-            self.done.emit(self._output)
+            _, stderr_bytes = self._proc.communicate()
+            rc = self._proc.returncode
+
+            # Código 255 es la salida normal cuando FFmpeg recibe 'q'
+            normal_exit = rc in (0, 255) or self._stopping
+            file_ok = os.path.exists(self._output) and os.path.getsize(self._output) > 0
+
+            if file_ok and normal_exit:
+                self.done.emit(self._output)
+            elif not file_ok:
+                msg = stderr_bytes.decode(errors='replace').strip()
+                # Mostrar solo las últimas líneas relevantes
+                lines = [l for l in msg.splitlines() if l.strip()]
+                snippet = '\n'.join(lines[-6:]) if lines else 'Sin detalles de FFmpeg.'
+                self.error.emit(f'FFmpeg no pudo iniciar la grabación:\n\n{snippet}')
+        except FileNotFoundError:
+            self.error.emit(
+                'FFmpeg no está instalado o no está en el PATH.\n'
+                'Descárgalo desde https://ffmpeg.org/download.html'
+            )
         except Exception as e:
             self.error.emit(str(e))
 
     def stop(self):
+        self._stopping = True
         if self._proc and self._proc.poll() is None:
             try:
                 self._proc.stdin.write(b'q')
