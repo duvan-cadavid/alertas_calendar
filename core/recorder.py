@@ -51,57 +51,102 @@ def ffmpeg_available() -> bool:
         return False
 
 
-def get_audio_devices() -> Tuple[List[str], List[str]]:
-    """Returns (mic_list, system_audio_list)."""
+AudioDevice = Tuple[str, str]   # (ffmpeg_device_id, display_name)
+
+
+def get_audio_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
+    """Returns (mic_list, system_audio_list) — each item is (device_id, display_name)."""
     if sys.platform == 'win32':
         return _dshow_devices()
     return _pulse_devices()
 
 
-def _dshow_devices() -> Tuple[List[str], List[str]]:
-    mics: List[str] = []
-    sys_devs: List[str] = []
+def _dshow_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
+    """Enumerate DirectShow audio devices on Windows via FFmpeg."""
+    import re
+    mics: List[AudioDevice] = []
+    sys_devs: List[AudioDevice] = []
     try:
         r = subprocess.run(
             ['ffmpeg', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'],
-            capture_output=True, text=True, timeout=10, encoding='utf-8', errors='replace',
+            capture_output=True, text=True, timeout=10,
+            encoding='utf-8', errors='replace',
         )
-        import re
         in_audio = False
         for line in r.stderr.splitlines():
             low = line.lower()
-            if '"audio"' in low:
+            # FFmpeg prints section headers like: "DirectShow audio devices"
+            if 'directshow audio' in low:
                 in_audio = True
-            elif '"video"' in low:
+                continue
+            if 'directshow video' in low:
                 in_audio = False
+                continue
             if not in_audio:
                 continue
-            m = re.search(r'"([^"]+)"', line)
-            if m:
-                name = m.group(1)
-                keywords = ('mix', 'stereo', 'loopback', 'what u hear', 'wave out', 'wasapi')
-                if any(k in name.lower() for k in keywords):
-                    sys_devs.append(name)
-                else:
-                    mics.append(name)
+            # Skip "Alternative name" lines (@device_cm_... / @device_pnp_...)
+            if 'alternative name' in low:
+                continue
+            m = re.search(r'"([^"@][^"]*)"', line)
+            if not m:
+                continue
+            name = m.group(1).strip()
+            if not name:
+                continue
+            keywords = ('mix', 'stereo', 'loopback', 'what u hear', 'wave out')
+            if any(k in name.lower() for k in keywords):
+                sys_devs.append((name, name))
+            else:
+                mics.append((name, name))
     except Exception:
         pass
     return mics, sys_devs
 
 
-def _pulse_devices() -> Tuple[List[str], List[str]]:
-    mics: List[str] = []
-    sys_devs: List[str] = []
+def _pulse_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
+    """Enumerate PulseAudio/PipeWire sources on Linux with friendly names."""
+    mics: List[AudioDevice] = []
+    sys_devs: List[AudioDevice] = []
     try:
-        r = subprocess.run(['pactl', 'list', 'sources', 'short'],
-                           capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            ['pactl', 'list', 'sources'],
+            capture_output=True, text=True, timeout=8,
+        )
+        dev_name: Optional[str] = None
+        dev_desc: Optional[str] = None
+        dev_state: Optional[str] = None
+
         for line in r.stdout.splitlines():
-            parts = line.split('\t')
-            if len(parts) >= 2:
-                name = parts[1]
-                (sys_devs if 'monitor' in name.lower() else mics).append(name)
+            s = line.strip()
+            if s.startswith('Name:'):
+                dev_name = s.split(':', 1)[1].strip()
+            elif s.startswith('Description:'):
+                dev_desc = s.split(':', 1)[1].strip()
+            elif s.startswith('State:'):
+                dev_state = s.split(':', 1)[1].strip()
+
+            # Each source block ends when we have all three fields
+            if dev_name and dev_desc and dev_state is not None:
+                # Skip null/virtual sinks and suspended devices
+                skip_keywords = ('auto_null', 'null-sink', 'dummy')
+                if (dev_state != 'SUSPENDED'
+                        and not any(k in dev_name.lower() for k in skip_keywords)):
+                    label = dev_desc  # human-readable
+                    if 'monitor' in dev_name.lower():
+                        sys_devs.append((dev_name, f"🔊 {label}"))
+                    else:
+                        mics.append((dev_name, f"🎙 {label}"))
+                dev_name = dev_desc = dev_state = None
+
     except Exception:
         pass
+
+    # Fallback: if pactl failed or found nothing, offer system default
+    if not mics:
+        mics.append(('default', '🎙 Micrófono predeterminado del sistema'))
+    if not sys_devs:
+        sys_devs.append(('default.monitor', '🔊 Audio del sistema (monitor predeterminado)'))
+
     return mics, sys_devs
 
 

@@ -306,14 +306,16 @@ class RecorderWindow(QWidget):
         self._mics, self._sys_devs = get_audio_devices()
 
         if self._mics:
-            self._mic_combo.addItems(self._mics)
+            for device_id, display in self._mics:
+                self._mic_combo.addItem(display, device_id)
         else:
             self._chk_mic.setEnabled(False)
             self._mic_combo.setEnabled(False)
             self._mic_combo.addItem('No se detectaron micrófonos')
 
         if self._sys_devs:
-            self._sys_combo.addItems(self._sys_devs)
+            for device_id, display in self._sys_devs:
+                self._sys_combo.addItem(display, device_id)
         else:
             self._chk_sys.setEnabled(False)
             self._sys_combo.setEnabled(False)
@@ -368,8 +370,8 @@ class RecorderWindow(QWidget):
         screen: Optional[ScreenInfo] = self._screen_combo.currentData()
         if screen is None:
             return
-        mic = self._mic_combo.currentText() if (self._chk_mic.isChecked() and self._mics) else None
-        sys_audio = self._sys_combo.currentText() if (self._chk_sys.isChecked() and self._sys_devs) else None
+        mic = self._mic_combo.currentData() if (self._chk_mic.isChecked() and self._mics) else None
+        sys_audio = self._sys_combo.currentData() if (self._chk_sys.isChecked() and self._sys_devs) else None
         self._current_output = self._build_output_path()
         self._elapsed = 0
         self._timer_lbl.setText('00:00:00')
