@@ -261,6 +261,9 @@ class DashboardWindow(QWidget):
 
         self._subtitle = QLabel("Cargando agenda…")
         self._subtitle.setObjectName('header_name')
+        self._subtitle.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
         left.addWidget(self._subtitle)
 
         header.addLayout(left)
@@ -300,6 +303,9 @@ class DashboardWindow(QWidget):
         self._footer = QLabel("Actualización automática cada minuto")
         self._footer.setStyleSheet("color: #45475a; font-size: 11px;")
         self._footer.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._footer.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
         root.addWidget(self._footer)
 
     def _check_for_updates(self) -> None:

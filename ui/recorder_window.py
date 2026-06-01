@@ -218,10 +218,18 @@ class RecorderWindow(QWidget):
         self._timer_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._timer_lbl.setStyleSheet(
             'font-size: 52px; font-weight: bold; color: #cdd6f4; font-family: monospace;')
+        self._timer_lbl.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
         timer_box.addWidget(self._timer_lbl)
 
         self._status_lbl = QLabel('● EN ESPERA')
         self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_lbl.setWordWrap(True)
+        self._status_lbl.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        self._status_lbl.setCursor(Qt.CursorShape.IBeamCursor)
         self._set_status('● EN ESPERA', '#6c7086', bold=False)
         timer_box.addWidget(self._status_lbl)
         inner.addLayout(timer_box)
@@ -427,7 +435,9 @@ class RecorderWindow(QWidget):
     def _on_error(self, msg: str):
         self._tick_timer.stop()
         self._set_controls('idle')
-        self._set_status(f'✗ {msg[:100]}', '#f38ba8')
+        self._set_status('✗ Error al grabar — ver detalle abajo', '#f38ba8')
+        self._trans_edit.setPlainText(msg)
+        self._btn_copy.show()
 
     # ── Transcription ─────────────────────────────────────────────
 

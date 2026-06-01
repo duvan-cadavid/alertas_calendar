@@ -150,6 +150,27 @@ def _pulse_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
     return mics, sys_devs
 
 
+# ── FFmpeg stderr parser ──────────────────────────────────────────────────────
+
+_VERSION_PREFIXES = (
+    'ffmpeg version', 'built with', 'configuration:', 'copyright',
+    'libav', 'libsw', 'libpost', 'lib',
+)
+
+def _ffmpeg_error(stderr: str) -> str:
+    """Return only the meaningful error lines from FFmpeg stderr output."""
+    all_lines = [l.strip() for l in stderr.splitlines() if l.strip()]
+    # Keep lines that are NOT version/library info
+    error_lines = [
+        l for l in all_lines
+        if not any(l.lower().startswith(p) for p in _VERSION_PREFIXES)
+    ]
+    # If nothing survived filtering, fall back to all lines
+    if not error_lines:
+        error_lines = all_lines
+    return '\n'.join(error_lines) if error_lines else 'Sin detalles de FFmpeg.'
+
+
 # ── Segment thread ────────────────────────────────────────────────────────────
 
 class _SegmentThread(QThread):
@@ -182,10 +203,8 @@ class _SegmentThread(QThread):
                 self.done.emit(self._output)
             elif not file_ok:
                 msg = stderr_bytes.decode(errors='replace').strip()
-                # Mostrar solo las últimas líneas relevantes
-                lines = [l for l in msg.splitlines() if l.strip()]
-                snippet = '\n'.join(lines[-6:]) if lines else 'Sin detalles de FFmpeg.'
-                self.error.emit(f'FFmpeg no pudo iniciar la grabación:\n\n{snippet}')
+                self.error.emit('FFmpeg no pudo iniciar la grabación:\n\n'
+                                + _ffmpeg_error(msg))
         except FileNotFoundError:
             self.error.emit(
                 'FFmpeg no está instalado o no está en el PATH.\n'
