@@ -55,6 +55,7 @@ class TrayApp:
 
         menu.addSeparator()
         menu.addAction("📅  Ver agenda de hoy",      self.show_dashboard)
+        menu.addAction("🎬  Grabar pantalla",         self.show_recorder)
         menu.addAction("🔔  Probar alerta ahora",     self._test_alert)
         menu.addSeparator()
         menu.addAction("⚙  Configuración",           self.show_settings)
@@ -70,6 +71,7 @@ class TrayApp:
 
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_tray_activated)
+        self._recorder_window = None
 
     # ── Navegación ────────────────────────────────────────────────
     def _on_tray_activated(self, reason):
@@ -95,6 +97,15 @@ class TrayApp:
         geo = screen.availableGeometry()
         window.setGeometry(geo)
         window.show()
+
+    def show_recorder(self):
+        if self._recorder_window and self._recorder_window.isVisible():
+            self._recorder_window.raise_()
+            self._recorder_window.activateWindow()
+            return
+        from ui.recorder_window import RecorderWindow
+        self._recorder_window = RecorderWindow(self.config)
+        self._recorder_window.show()
 
     def show_settings(self):
         if self._settings_window and self._settings_window.isVisible():

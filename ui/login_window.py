@@ -2,6 +2,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QFormLayout, QGroupBox, QMessageBox, QSpinBox, QComboBox,
+    QFileDialog,
 )
 
 from api.client import SofisisClient
@@ -190,6 +191,26 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(g3)
 
+        # ── Grabaciones ───────────────────────────────────────────
+        g4 = QGroupBox("Grabaciones de pantalla")
+        f4 = QFormLayout(g4)
+        f4.setSpacing(12)
+        f4.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(6)
+        self._rec_folder = QLineEdit(self.config.recordings_folder)
+        self._rec_folder.setPlaceholderText("Carpeta donde se guardan las grabaciones")
+        folder_row.addWidget(self._rec_folder)
+        browse_rec = QPushButton("···")
+        browse_rec.setObjectName("test_btn")
+        browse_rec.setFixedWidth(44)
+        browse_rec.clicked.connect(self._browse_recordings)
+        folder_row.addWidget(browse_rec)
+        f4.addRow("Carpeta:", folder_row)
+
+        layout.addWidget(g4)
+
         layout.addSpacing(8)
 
         # ── Botones ───────────────────────────────────────────────
@@ -208,6 +229,12 @@ class SettingsWindow(QWidget):
         btn_row.addWidget(save)
 
         layout.addLayout(btn_row)
+
+    def _browse_recordings(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, 'Seleccionar carpeta de grabaciones', self._rec_folder.text())
+        if folder:
+            self._rec_folder.setText(folder)
 
     # ──────────────────────────────────────────────────────────────
     def _test(self):
@@ -240,6 +267,7 @@ class SettingsWindow(QWidget):
         self.config.user_id = user_id
         self.config.minutes_before_warning = self._minutes.value()
         self.config.timezone = self._timezone.currentData()
+        self.config.recordings_folder = self._rec_folder.text().strip() or self.config.recordings_folder
         self.config.save()
 
         if self._on_save:
