@@ -26,7 +26,7 @@ class EventScheduler(QObject):
         self._start_times:    Dict[int, datetime] = {}
 
     def start(self) -> None:
-        self._client = SofisisClient(self.config.server_url, self.config.api_token)
+        self._client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
         self._check()
         self._timer.start(self.POLL_INTERVAL_MS)
 

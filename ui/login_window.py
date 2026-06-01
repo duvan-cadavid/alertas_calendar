@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFormLayout, QGroupBox, QMessageBox, QSpinBox,
+    QPushButton, QFormLayout, QGroupBox, QMessageBox, QSpinBox, QComboBox,
 )
 
 from api.client import SofisisClient
@@ -28,7 +28,7 @@ _STYLE = """
         left: 12px;
         padding: 0 6px;
     }
-    QLineEdit, QSpinBox {
+    QLineEdit, QSpinBox, QComboBox {
         background-color: #313244;
         border: 1px solid #45475a;
         border-radius: 6px;
@@ -37,8 +37,16 @@ _STYLE = """
         font-size: 14px;
         min-height: 20px;
     }
-    QLineEdit:focus, QSpinBox:focus {
+    QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
         border-color: #89b4fa;
+    }
+    QComboBox::drop-down { border: none; padding-right: 8px; }
+    QComboBox QAbstractItemView {
+        background-color: #313244;
+        border: 1px solid #45475a;
+        color: #cdd6f4;
+        selection-background-color: #45475a;
+        outline: none;
     }
     QPushButton#save_btn {
         background-color: #89b4fa;
@@ -77,6 +85,25 @@ _STYLE = """
         font-size: 13px;
     }
 """
+
+
+_TIMEZONES = [
+    ('America/Bogota',                  'Bogotá, Lima, Quito  (UTC−5)'),
+    ('America/Lima',                    'Lima  (UTC−5)'),
+    ('America/Guayaquil',               'Guayaquil  (UTC−5)'),
+    ('America/Panama',                  'Panamá  (UTC−5)'),
+    ('America/Caracas',                 'Caracas  (UTC−4)'),
+    ('America/La_Paz',                  'La Paz  (UTC−4)'),
+    ('America/Santiago',                'Santiago  (UTC−3/−4)'),
+    ('America/Argentina/Buenos_Aires',  'Buenos Aires  (UTC−3)'),
+    ('America/Sao_Paulo',               'São Paulo  (UTC−3)'),
+    ('America/Mexico_City',             'Ciudad de México  (UTC−6)'),
+    ('America/New_York',                'Nueva York  (UTC−5/−4)'),
+    ('America/Chicago',                 'Chicago  (UTC−6/−5)'),
+    ('America/Los_Angeles',             'Los Ángeles  (UTC−8/−7)'),
+    ('Europe/Madrid',                   'Madrid  (UTC+1/+2)'),
+    ('UTC',                             'UTC'),
+]
 
 
 class SettingsWindow(QWidget):
@@ -153,6 +180,14 @@ class SettingsWindow(QWidget):
         self._minutes.setSuffix(" minutos antes")
         f3.addRow("Aviso previo:", self._minutes)
 
+        self._timezone = QComboBox()
+        for tz_id, tz_label in _TIMEZONES:
+            self._timezone.addItem(tz_label, userData=tz_id)
+        current_tz = self.config.timezone
+        idx = next((i for i, (tz_id, _) in enumerate(_TIMEZONES) if tz_id == current_tz), 0)
+        self._timezone.setCurrentIndex(idx)
+        f3.addRow("Zona horaria:", self._timezone)
+
         layout.addWidget(g3)
 
         layout.addSpacing(8)
@@ -185,7 +220,8 @@ class SettingsWindow(QWidget):
             return
 
         try:
-            result = SofisisClient(url, token).test_connection(user_id)
+            tz = self._timezone.currentData()
+            result = SofisisClient(url, token, timezone=tz).test_connection(user_id)
             QMessageBox.information(self, "Conexión exitosa", f"✓  {result}")
         except Exception as e:
             QMessageBox.critical(self, "Error de conexión", f"No se pudo conectar:\n\n{e}")
@@ -203,6 +239,7 @@ class SettingsWindow(QWidget):
         self.config.api_token = token
         self.config.user_id = user_id
         self.config.minutes_before_warning = self._minutes.value()
+        self.config.timezone = self._timezone.currentData()
         self.config.save()
 
         if self._on_save:

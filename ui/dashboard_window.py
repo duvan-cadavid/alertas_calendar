@@ -221,7 +221,7 @@ class DashboardWindow(QWidget):
     def __init__(self, config: Config):
         super().__init__()
         self._config = config
-        self._client = SofisisClient(config.server_url, config.api_token)
+        self._client = SofisisClient(config.server_url, config.api_token, config.timezone)
         self._thread: _FetchThread | None = None
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None

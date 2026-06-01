@@ -111,7 +111,7 @@ class TrayApp:
             self.show_settings()
             return
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token)
+            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
             appointments = client.get_today_appointments(self.config.user_id)
             now = datetime.now().astimezone()
             # Buscar el siguiente evento futuro o el más cercano
@@ -191,7 +191,7 @@ class TrayApp:
 
     def _on_attendance_confirmed(self, appt: Appointment):
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token)
+            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
             client.confirm_attendance(appt.id)
         except Exception:
             pass
@@ -216,7 +216,7 @@ class TrayApp:
     # ── Cancelar tarea ────────────────────────────────────────────
     def _on_cancelled(self, appt: Appointment, new_observations: str):
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token)
+            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
             client.update_observations(appt.id, new_observations)
             self._tray.showMessage(
                 "Tarea cancelada",
