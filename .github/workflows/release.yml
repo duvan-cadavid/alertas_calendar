@@ -39,7 +39,7 @@ jobs:
           architecture: 'x64'
 
       - name: Instalar dependencias Python
-        run: pip install PyQt6 requests pyinstaller pillow
+        run: pip install -r requirements.txt pyinstaller pillow
 
       - name: Escribir versión en core/version.py
         shell: powershell
