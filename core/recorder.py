@@ -26,21 +26,55 @@ class ScreenInfo:
 
 
 def get_screens() -> List[ScreenInfo]:
-    """Return screens with physical pixel dimensions (corrected for DPI scaling)."""
+    """Return screens with physical pixel dimensions and correct X11/GDI positions."""
+    qt_screens = QApplication.screens()
+    phys_map = _xrandr_geometry(qt_screens) if sys.platform != 'win32' else {}
+
     result = []
-    for i, s in enumerate(QApplication.screens()):
+    for i, s in enumerate(qt_screens):
         g = s.geometry()
         ratio = s.devicePixelRatio()
-        # Physical pixels = logical pixels × DPI ratio
-        phys_x = round(g.x() * ratio)
-        phys_y = round(g.y() * ratio)
-        phys_w = round(g.width() * ratio)
-        phys_h = round(g.height() * ratio)
-        result.append(ScreenInfo(
-            i, s.name() or f"Monitor {i + 1}",
-            phys_x, phys_y, phys_w, phys_h, ratio,
-        ))
+        if i in phys_map:
+            x, y, w, h = phys_map[i]
+        else:
+            # Windows or xrandr unavailable — gdigrab uses physical coords
+            x = round(g.x() * ratio)
+            y = round(g.y() * ratio)
+            w = round(g.width() * ratio)
+            h = round(g.height() * ratio)
+        result.append(ScreenInfo(i, s.name() or f"Monitor {i + 1}", x, y, w, h, ratio))
     return result
+
+
+def _xrandr_geometry(qt_screens: list) -> dict:
+    """Match each Qt screen to its xrandr physical geometry by resolution.
+
+    Sorting by index alone is wrong because Qt lists primary first while
+    xrandr orders by connector name.  Matching by (width, height) is reliable
+    as long as no two monitors share the exact same resolution.
+    """
+    import re
+    out: dict = {}
+    try:
+        r = subprocess.run(['xrandr', '--query'], capture_output=True, text=True, timeout=5)
+        xrandr = [
+            (int(w), int(h), int(x), int(y))
+            for w, h, x, y in re.findall(
+                r' connected(?: primary)? (\d+)x(\d+)\+(\d+)\+(\d+)', r.stdout
+            )
+        ]
+        for i, s in enumerate(qt_screens):
+            g = s.geometry()
+            ratio = s.devicePixelRatio()
+            phys_w = round(g.width() * ratio)
+            phys_h = round(g.height() * ratio)
+            for w, h, x, y in xrandr:
+                if w == phys_w and h == phys_h:
+                    out[i] = (x, y, w, h)
+                    break
+    except Exception:
+        pass
+    return out
 
 
 def ffmpeg_available() -> bool:
