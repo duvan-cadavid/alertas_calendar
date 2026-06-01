@@ -10,23 +10,36 @@ from PyQt6.QtWidgets import QApplication
 
 
 class ScreenInfo:
-    def __init__(self, index: int, name: str, x: int, y: int, width: int, height: int):
+    def __init__(self, index: int, name: str,
+                 x: int, y: int, width: int, height: int, scale: float = 1.0):
         self.index = index
         self.name = name
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+        self.x = x           # physical pixels
+        self.y = y           # physical pixels
+        self.width = width   # physical pixels
+        self.height = height # physical pixels
+        self.scale = scale
 
     def label(self) -> str:
-        return f"Pantalla {self.index + 1} — {self.name}  ({self.width}×{self.height})"
+        scale_str = f'  ·  {self.scale:.0%} DPI' if self.scale != 1.0 else ''
+        return f"Pantalla {self.index + 1} — {self.name}  ({self.width}×{self.height}{scale_str})"
 
 
 def get_screens() -> List[ScreenInfo]:
+    """Return screens with physical pixel dimensions (corrected for DPI scaling)."""
     result = []
     for i, s in enumerate(QApplication.screens()):
         g = s.geometry()
-        result.append(ScreenInfo(i, s.name() or f"Monitor {i + 1}", g.x(), g.y(), g.width(), g.height()))
+        ratio = s.devicePixelRatio()
+        # Physical pixels = logical pixels × DPI ratio
+        phys_x = round(g.x() * ratio)
+        phys_y = round(g.y() * ratio)
+        phys_w = round(g.width() * ratio)
+        phys_h = round(g.height() * ratio)
+        result.append(ScreenInfo(
+            i, s.name() or f"Monitor {i + 1}",
+            phys_x, phys_y, phys_w, phys_h, ratio,
+        ))
     return result
 
 
