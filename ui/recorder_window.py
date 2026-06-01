@@ -6,7 +6,7 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QTextEdit, QFrame, QSizePolicy,
+    QComboBox, QCheckBox, QTextEdit, QFrame, QSizePolicy, QScrollArea,
 )
 
 from config.settings import Config
@@ -108,8 +108,8 @@ class RecorderWindow(QWidget):
         super().__init__(parent)
         self._config = config
         self.setWindowTitle('Grabación de Pantalla')
-        self.setMinimumSize(580, 660)
-        self.resize(620, 740)
+        self.setMinimumSize(520, 440)
+        self.resize(620, 760)
         self.setStyleSheet(_STYLE)
 
         self._recorder = ScreenRecorder(self)
@@ -138,22 +138,40 @@ class RecorderWindow(QWidget):
 
     def _build_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(14)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            'QScrollArea { border: none; background: transparent; }'
+            'QScrollBar:vertical { background: #181825; width: 8px; border-radius: 4px; }'
+            'QScrollBar::handle:vertical { background: #45475a; border-radius: 4px; min-height: 24px; }'
+            'QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }'
+        )
+
+        container = QWidget()
+        inner = QVBoxLayout(container)
+        inner.setContentsMargins(24, 20, 24, 20)
+        inner.setSpacing(14)
 
         title = QLabel('🎬  Grabación de Pantalla')
         title.setStyleSheet('font-size: 18px; font-weight: bold; color: #89b4fa;')
-        root.addWidget(title)
-        root.addWidget(_sep())
+        inner.addWidget(title)
+        inner.addWidget(_sep())
+
+        scroll.setWidget(container)
+        root.addWidget(scroll)
 
         # ── Screen ────────────────────────────────────────────────
-        root.addWidget(_section_lbl('PANTALLA'))
+        inner.addWidget(_section_lbl('PANTALLA'))
         self._screen_combo = QComboBox()
-        root.addWidget(self._screen_combo)
-        root.addWidget(_sep())
+        inner.addWidget(self._screen_combo)
+        inner.addWidget(_sep())
 
         # ── Audio ─────────────────────────────────────────────────
-        root.addWidget(_section_lbl('AUDIO'))
+        inner.addWidget(_section_lbl('AUDIO'))
 
         mic_row = QHBoxLayout()
         self._chk_mic = QCheckBox('Micrófono')
@@ -164,7 +182,7 @@ class RecorderWindow(QWidget):
         self._mic_combo = QComboBox()
         self._mic_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         mic_row.addWidget(self._mic_combo)
-        root.addLayout(mic_row)
+        inner.addLayout(mic_row)
 
         sys_row = QHBoxLayout()
         self._chk_sys = QCheckBox('Audio del sistema')
@@ -175,8 +193,8 @@ class RecorderWindow(QWidget):
         self._sys_combo = QComboBox()
         self._sys_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         sys_row.addWidget(self._sys_combo)
-        root.addLayout(sys_row)
-        root.addWidget(_sep())
+        inner.addLayout(sys_row)
+        inner.addWidget(_sep())
 
         # ── Output folder (read-only, configured in Settings) ─────
         folder_row = QHBoxLayout()
@@ -184,9 +202,12 @@ class RecorderWindow(QWidget):
         self._folder_lbl = QLabel(self._config.recordings_folder)
         self._folder_lbl.setStyleSheet('font-size: 12px; color: #a6adc8;')
         self._folder_lbl.setWordWrap(True)
+        self._folder_lbl.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
         folder_row.addWidget(self._folder_lbl, 1)
-        root.addLayout(folder_row)
-        root.addWidget(_sep())
+        inner.addLayout(folder_row)
+        inner.addWidget(_sep())
 
         # ── Timer display ─────────────────────────────────────────
         timer_box = QVBoxLayout()
@@ -203,7 +224,7 @@ class RecorderWindow(QWidget):
         self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._set_status('● EN ESPERA', '#6c7086', bold=False)
         timer_box.addWidget(self._status_lbl)
-        root.addLayout(timer_box)
+        inner.addLayout(timer_box)
 
         # ── Control buttons ───────────────────────────────────────
         btn_row = QHBoxLayout()
@@ -233,8 +254,8 @@ class RecorderWindow(QWidget):
         self._btn_stop.hide()
         btn_row.addWidget(self._btn_stop)
 
-        root.addLayout(btn_row)
-        root.addWidget(_sep())
+        inner.addLayout(btn_row)
+        inner.addWidget(_sep())
 
         # ── Transcription ─────────────────────────────────────────
         trans_hdr = QHBoxLayout()
@@ -245,16 +266,16 @@ class RecorderWindow(QWidget):
         self._btn_copy.clicked.connect(self._copy_transcription)
         self._btn_copy.hide()
         trans_hdr.addWidget(self._btn_copy)
-        root.addLayout(trans_hdr)
+        inner.addLayout(trans_hdr)
 
         self._trans_edit = QTextEdit()
         self._trans_edit.setReadOnly(True)
-        self._trans_edit.setMinimumHeight(130)
+        self._trans_edit.setMinimumHeight(160)
         self._trans_edit.setPlaceholderText(
             'La transcripción aparecerá aquí al finalizar la grabación…')
-        root.addWidget(self._trans_edit, 1)
+        inner.addWidget(self._trans_edit)
 
-        root.addWidget(_sep())
+        inner.addWidget(_sep())
 
         # ── Summary ───────────────────────────────────────────────
         sum_hdr = QHBoxLayout()
@@ -265,14 +286,15 @@ class RecorderWindow(QWidget):
         self._btn_copy_sum.clicked.connect(self._copy_summary)
         self._btn_copy_sum.hide()
         sum_hdr.addWidget(self._btn_copy_sum)
-        root.addLayout(sum_hdr)
+        inner.addLayout(sum_hdr)
 
         self._sum_edit = QTextEdit()
         self._sum_edit.setReadOnly(True)
-        self._sum_edit.setMinimumHeight(130)
+        self._sum_edit.setMinimumHeight(160)
         self._sum_edit.setPlaceholderText(
             'El resumen aparecerá aquí una vez completada la transcripción…')
-        root.addWidget(self._sum_edit, 1)
+        inner.addWidget(self._sum_edit)
+        inner.addStretch()
 
     # ── Setup ─────────────────────────────────────────────────────
 

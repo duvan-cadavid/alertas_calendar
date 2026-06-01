@@ -1,7 +1,7 @@
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFormLayout, QGroupBox, QMessageBox, QSpinBox, QComboBox,
+    QPushButton, QFormLayout, QGroupBox, QMessageBox, QComboBox,
     QFileDialog, QScrollArea, QFrame,
 )
 
@@ -199,10 +199,14 @@ class SettingsWindow(QWidget):
         f3 = QFormLayout(g3)
         f3.setSpacing(12)
         f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._minutes = QSpinBox()
-        self._minutes.setRange(1, 30)
-        self._minutes.setValue(self.config.minutes_before_warning)
-        self._minutes.setSuffix(" minutos antes")
+        self._minutes = QComboBox()
+        for mins in [2, 5, 10, 20]:
+            self._minutes.addItem(f"{mins} minutos antes", mins)
+        _warning_idx = next(
+            (i for i, m in enumerate([2, 5, 10, 20])
+             if m == self.config.minutes_before_warning), 1
+        )
+        self._minutes.setCurrentIndex(_warning_idx)
         f3.addRow("Aviso previo:", self._minutes)
         self._timezone = QComboBox()
         for tz_id, tz_label in _TIMEZONES:
@@ -309,7 +313,7 @@ class SettingsWindow(QWidget):
         self.config.server_url             = url
         self.config.api_token              = token
         self.config.user_id                = uid
-        self.config.minutes_before_warning = self._minutes.value()
+        self.config.minutes_before_warning = self._minutes.currentData()
         self.config.timezone               = self._timezone.currentData()
         self.config.recordings_folder      = self._rec_folder.text().strip() or self.config.recordings_folder
         self.config.groq_api_key           = self._groq_key.text().strip()

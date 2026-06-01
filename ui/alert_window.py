@@ -300,14 +300,14 @@ class AlertWindow(QWidget):
 
         center.addWidget(self._sep())
 
-        time_lbl = QLabel(
+        time_lbl = self._selectable(QLabel(
             f"⏰   {_fmt_time(self.appointment.start_date)}  —  {_fmt_time(self.appointment.end_date)}"
-        )
+        ))
         time_lbl.setObjectName("time_label")
         time_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         center.addWidget(time_lbl)
 
-        name_lbl = QLabel(self.appointment.text.upper())
+        name_lbl = self._selectable(QLabel(self.appointment.text.upper()))
         name_lbl.setObjectName("event_name")
         name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_lbl.setWordWrap(True)
@@ -316,24 +316,24 @@ class AlertWindow(QWidget):
         center.addSpacing(6)
 
         if self.appointment.customer_name:
-            lbl = QLabel(f"👤   Paciente / Cliente:  {self.appointment.customer_name}")
+            lbl = self._selectable(QLabel(f"👤   Paciente / Cliente:  {self.appointment.customer_name}"))
             lbl.setObjectName("info")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             center.addWidget(lbl)
 
         if self.appointment.service_name:
-            lbl = QLabel(f"⚕   Servicio:  {self.appointment.service_name}")
+            lbl = self._selectable(QLabel(f"⚕   Servicio:  {self.appointment.service_name}"))
             lbl.setObjectName("info")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             center.addWidget(lbl)
 
         if self.appointment.observations:
-            lbl = QLabel("📝   Observaciones:")
+            lbl = self._selectable(QLabel("📝   Observaciones:"))
             lbl.setObjectName("info")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             center.addWidget(lbl)
 
-            obs = QLabel(self.appointment.observations[:400])
+            obs = self._selectable(QLabel(self.appointment.observations[:400]))
             obs.setObjectName("obs")
             obs.setAlignment(Qt.AlignmentFlag.AlignCenter)
             obs.setWordWrap(True)
@@ -374,6 +374,14 @@ class AlertWindow(QWidget):
 
         root.addLayout(center)
         root.addStretch()
+
+    @staticmethod
+    def _selectable(lbl: QLabel) -> QLabel:
+        lbl.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        lbl.setCursor(Qt.CursorShape.IBeamCursor)
+        return lbl
 
     def _sep(self) -> QFrame:
         line = QFrame()

@@ -142,6 +142,14 @@ class AppointmentCard(QFrame):
         self._confirm_btn = None
         self._build(appt, status)
 
+    @staticmethod
+    def _selectable(lbl: QLabel) -> QLabel:
+        lbl.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        lbl.setCursor(Qt.CursorShape.IBeamCursor)
+        return lbl
+
     def _build(self, appt: Appointment, status: str):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -149,7 +157,7 @@ class AppointmentCard(QFrame):
 
         # Hora + badge
         top = QHBoxLayout()
-        time_lbl = QLabel(f"⏰ {_fmt(appt.start_date)}  —  {_fmt(appt.end_date)}")
+        time_lbl = self._selectable(QLabel(f"⏰ {_fmt(appt.start_date)}  —  {_fmt(appt.end_date)}"))
         time_lbl.setObjectName('card_time')
         top.addWidget(time_lbl)
         top.addStretch()
@@ -161,7 +169,7 @@ class AppointmentCard(QFrame):
         layout.addLayout(top)
 
         # Título
-        title = QLabel(appt.text)
+        title = self._selectable(QLabel(appt.text))
         title.setObjectName('card_title')
         title.setWordWrap(True)
         layout.addWidget(title)
@@ -174,17 +182,17 @@ class AppointmentCard(QFrame):
 
         # Info
         if appt.customer_name:
-            info = QLabel(f"👤  {appt.customer_name}")
+            info = self._selectable(QLabel(f"👤  {appt.customer_name}"))
             info.setObjectName('card_info')
             layout.addWidget(info)
 
         if appt.service_name:
-            svc = QLabel(f"⚕  {appt.service_name}")
+            svc = self._selectable(QLabel(f"⚕  {appt.service_name}"))
             svc.setObjectName('card_info')
             layout.addWidget(svc)
 
         if appt.observations:
-            obs = QLabel(f"📝  {appt.observations[:120]}{'…' if len(appt.observations) > 120 else ''}")
+            obs = self._selectable(QLabel(f"📝  {appt.observations[:120]}{'…' if len(appt.observations) > 120 else ''}"))
             obs.setObjectName('card_info')
             obs.setWordWrap(True)
             layout.addWidget(obs)

@@ -91,17 +91,21 @@ class MiniAlert(QWidget):
         top.addWidget(close_btn)
         root.addLayout(top)
 
-        event_lbl = QLabel(self._appointment.text)
+        _sel = lambda l: (l.setTextInteractionFlags(  # noqa: E731
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard), l)[1]
+
+        event_lbl = _sel(QLabel(self._appointment.text))
         event_lbl.setObjectName('mini_event')
         event_lbl.setWordWrap(True)
         root.addWidget(event_lbl)
 
-        time_lbl = QLabel(f"🕐  {_fmt(self._appointment.start_date)}  —  {_fmt(self._appointment.end_date)}")
+        time_lbl = _sel(QLabel(f"🕐  {_fmt(self._appointment.start_date)}  —  {_fmt(self._appointment.end_date)}"))
         time_lbl.setObjectName('mini_time')
         root.addWidget(time_lbl)
 
         if self._appointment.customer_name:
-            info = QLabel(f"👤  {self._appointment.customer_name}")
+            info = _sel(QLabel(f"👤  {self._appointment.customer_name}"))
             info.setObjectName('mini_info')
             root.addWidget(info)
 
