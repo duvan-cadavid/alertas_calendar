@@ -200,6 +200,7 @@ class SettingsWindow(QWidget):
         f3.setSpacing(12)
         f3.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._minutes = QComboBox()
+        self._minutes.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         for mins in [2, 5, 10, 20]:
             self._minutes.addItem(f"{mins} minutos antes", mins)
         _warning_idx = next(
@@ -209,6 +210,7 @@ class SettingsWindow(QWidget):
         self._minutes.setCurrentIndex(_warning_idx)
         f3.addRow("Aviso previo:", self._minutes)
         self._timezone = QComboBox()
+        self._timezone.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         for tz_id, tz_label in _TIMEZONES:
             self._timezone.addItem(tz_label, userData=tz_id)
         idx = next((i for i, (tz_id, _) in enumerate(_TIMEZONES)
