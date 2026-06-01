@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 from config.settings import Config
 from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available
 from core.transcriber import TranscriberThread
+from core.summarizer import SummarizerThread
 
 _STYLE = """
 QWidget {
@@ -119,6 +120,7 @@ class RecorderWindow(QWidget):
         self._recorder.error.connect(self._on_error)
 
         self._transcriber: Optional[TranscriberThread] = None
+        self._summarizer: Optional[SummarizerThread] = None
         self._screens: List[ScreenInfo] = []
         self._mics: List[str] = []
         self._sys_devs: List[str] = []
@@ -247,10 +249,30 @@ class RecorderWindow(QWidget):
 
         self._trans_edit = QTextEdit()
         self._trans_edit.setReadOnly(True)
-        self._trans_edit.setMinimumHeight(160)
+        self._trans_edit.setMinimumHeight(130)
         self._trans_edit.setPlaceholderText(
             'La transcripción aparecerá aquí al finalizar la grabación…')
         root.addWidget(self._trans_edit, 1)
+
+        root.addWidget(_sep())
+
+        # ── Summary ───────────────────────────────────────────────
+        sum_hdr = QHBoxLayout()
+        sum_hdr.addWidget(_section_lbl('RESUMEN DE LA REUNIÓN'))
+        sum_hdr.addStretch()
+        self._btn_copy_sum = QPushButton('Copiar')
+        self._btn_copy_sum.setObjectName('btn_copy')
+        self._btn_copy_sum.clicked.connect(self._copy_summary)
+        self._btn_copy_sum.hide()
+        sum_hdr.addWidget(self._btn_copy_sum)
+        root.addLayout(sum_hdr)
+
+        self._sum_edit = QTextEdit()
+        self._sum_edit.setReadOnly(True)
+        self._sum_edit.setMinimumHeight(130)
+        self._sum_edit.setPlaceholderText(
+            'El resumen aparecerá aquí una vez completada la transcripción…')
+        root.addWidget(self._sum_edit, 1)
 
     # ── Setup ─────────────────────────────────────────────────────
 
@@ -372,6 +394,10 @@ class RecorderWindow(QWidget):
     def _on_finished(self, path: str):
         self._set_controls('idle')
         self._set_status(f'✓ Guardado: {os.path.basename(path)}', '#4ade80')
+        self._trans_edit.clear()
+        self._sum_edit.clear()
+        self._btn_copy.hide()
+        self._btn_copy_sum.hide()
         self._start_transcription(path)
 
     def _on_error(self, msg: str):
@@ -382,13 +408,17 @@ class RecorderWindow(QWidget):
     # ── Transcription ─────────────────────────────────────────────
 
     def _start_transcription(self, path: str):
-        self._trans_edit.setPlaceholderText('Iniciando transcripción…')
-        self._transcriber = TranscriberThread(path, self)
-        self._transcriber.progress.connect(
-            lambda m: self._trans_edit.setPlaceholderText(m))
+        api_key = self._config.groq_api_key
+        if not api_key:
+            self._trans_edit.setPlaceholderText(
+                '⚠ Configura tu API key de Groq en ⚙ Configuración para activar la transcripción.')
+            return
+        self._trans_edit.setPlaceholderText('Extrayendo audio…')
+        self._transcriber = TranscriberThread(path, api_key, self)
+        self._transcriber.progress.connect(self._trans_edit.setPlaceholderText)
         self._transcriber.done.connect(self._on_transcription_done)
         self._transcriber.error.connect(
-            lambda e: self._trans_edit.setPlaceholderText(f'Error en transcripción: {e}'))
+            lambda e: self._trans_edit.setPlaceholderText(f'Error: {e}'))
         self._transcriber.start()
 
     def _on_transcription_done(self, text: str):
@@ -400,7 +430,32 @@ class RecorderWindow(QWidget):
                 f.write(text)
         except Exception:
             pass
+        self._start_summary(text)
 
     def _copy_transcription(self):
         from PyQt6.QtWidgets import QApplication
         QApplication.clipboard().setText(self._trans_edit.toPlainText())
+
+    # ── Summary ───────────────────────────────────────────────────
+
+    def _start_summary(self, transcription: str):
+        self._sum_edit.setPlaceholderText('Generando resumen con IA…')
+        self._summarizer = SummarizerThread(transcription, self._config.groq_api_key, self)
+        self._summarizer.done.connect(self._on_summary_done)
+        self._summarizer.error.connect(
+            lambda e: self._sum_edit.setPlaceholderText(f'Error al resumir: {e}'))
+        self._summarizer.start()
+
+    def _on_summary_done(self, text: str):
+        self._sum_edit.setPlainText(text)
+        self._btn_copy_sum.show()
+        sum_path = os.path.splitext(self._current_output)[0] + '_resumen.txt'
+        try:
+            with open(sum_path, 'w', encoding='utf-8') as f:
+                f.write(text)
+        except Exception:
+            pass
+
+    def _copy_summary(self):
+        from PyQt6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self._sum_edit.toPlainText())

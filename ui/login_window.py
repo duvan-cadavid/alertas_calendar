@@ -191,6 +191,27 @@ class SettingsWindow(QWidget):
 
         layout.addWidget(g3)
 
+        # ── Transcripción e IA ────────────────────────────────────
+        g_ai = QGroupBox("Transcripción e IA  (Groq)")
+        f_ai = QFormLayout(g_ai)
+        f_ai.setSpacing(12)
+        f_ai.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        self._groq_key = QLineEdit(self.config.groq_api_key)
+        self._groq_key.setPlaceholderText("gsk_…")
+        self._groq_key.setEchoMode(QLineEdit.EchoMode.Password)
+        f_ai.addRow("API Key:", self._groq_key)
+
+        groq_help = QLabel(
+            "Obtén tu clave gratis en console.groq.com  —  "
+            "incluye ~2 horas/día de transcripción sin costo"
+        )
+        groq_help.setObjectName("help")
+        groq_help.setWordWrap(True)
+        f_ai.addRow("", groq_help)
+
+        layout.addWidget(g_ai)
+
         # ── Grabaciones ───────────────────────────────────────────
         g4 = QGroupBox("Grabaciones de pantalla")
         f4 = QFormLayout(g4)
@@ -268,6 +289,7 @@ class SettingsWindow(QWidget):
         self.config.minutes_before_warning = self._minutes.value()
         self.config.timezone = self._timezone.currentData()
         self.config.recordings_folder = self._rec_folder.text().strip() or self.config.recordings_folder
+        self.config.groq_api_key = self._groq_key.text().strip()
         self.config.save()
 
         if self._on_save:

@@ -5,7 +5,7 @@ from pathlib import Path
 CONFIG_DIR = Path.home() / '.alertas_calendario'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
 
-_FIELDS = {'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone', 'recordings_folder'}
+_FIELDS = {'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone', 'recordings_folder', 'groq_api_key'}
 
 _DEFAULT_RECORDINGS = str(Path.home() / 'Videos' / 'goujana')
 
@@ -18,6 +18,7 @@ class Config:
     minutes_before_warning: int = 5
     timezone: str = 'America/Bogota'
     recordings_folder: str = _DEFAULT_RECORDINGS
+    groq_api_key: str = ''
 
     def is_configured(self) -> bool:
         return bool(self.server_url and self.api_token and self.user_id)
