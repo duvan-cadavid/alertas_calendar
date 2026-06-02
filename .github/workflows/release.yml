@@ -49,6 +49,15 @@ jobs:
             -replace '__version__ = ".*"', "__version__ = `"$v`"" |
           Set-Content core\version.py
 
+      - name: Inyectar Groq API key
+        shell: powershell
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          $key = $env:GROQ_API_KEY
+          $content = "# Groq API key — injected by CI`nGROQ_API_KEY = `"$key`""
+          Set-Content -Path core\ai_config.py -Value $content -Encoding UTF8
+
       - name: Build con PyInstaller
         run: pyinstaller build/alertas.spec --noconfirm --clean
 
