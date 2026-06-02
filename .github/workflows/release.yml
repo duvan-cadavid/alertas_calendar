@@ -113,10 +113,10 @@ jobs:
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}
 
-            - **Fix: micrófonos detectados correctamente** — el parser de dispositivos de audio ahora entiende el nuevo formato de FFmpeg 8.x (`"Nombre" (audio)` en una sola línea), resolviendo la detección de 0 micrófonos en versiones anteriores
-            - **Fix: audio capturado con dshow** — el build "essentials" de FFmpeg no incluye WASAPI; el grabador ahora usa DirectShow tanto para enumerar como para capturar audio
-            - **Fix: FFmpeg bundled detectado correctamente** — la app busca `ffmpeg.exe` en `bin\` antes de recurrir al PATH del sistema
-            - **Log de diagnóstico** — botón "📋 Ver log de diagnóstico" en la ventana de grabación (`%USERPROFILE%\.alertas_calendario\recorder.log`)
+            - **Barra de micrófono en tiempo real** — usa `IAudioMeterInformation` de Windows Core Audio (via ctypes, sin dependencias extra) para mostrar el nivel real del micrófono, no una animación aleatoria
+            - **Fix: micrófonos detectados correctamente** — el parser dshow ahora entiende el formato de FFmpeg 8.x (`"Nombre" (audio)`)
+            - **Fix: audio capturado con dshow** — essentials build no incluye WASAPI; ahora se usa DirectShow
+            - **Fix: FFmpeg bundled detectado correctamente** — busca `ffmpeg.exe` en `bin\` antes del PATH
 
             ## Descarga e instalación
 
