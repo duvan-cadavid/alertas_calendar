@@ -88,6 +88,9 @@ class TrayApp:
             return
         from ui.dashboard_window import DashboardWindow
         self._dashboard_window = DashboardWindow(self.config)
+        self._dashboard_window.open_settings.connect(self.show_settings)
+        self._dashboard_window.open_recorder.connect(self.show_recorder)
+        self._dashboard_window.test_alert.connect(self._test_alert)
         self._show_on_primary(self._dashboard_window, maximized=fullscreen)
 
     @staticmethod
