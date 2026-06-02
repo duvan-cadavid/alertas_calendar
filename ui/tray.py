@@ -6,7 +6,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
 
-from api.client import Appointment, SofisisClient
+from api.client import Appointment, GoujanaClient
 from config.settings import Config
 from core.downloader import InstallerDownloader, launch_installer
 from core.scheduler import EventScheduler
@@ -41,7 +41,7 @@ class TrayApp:
 
         self._tray = QSystemTrayIcon()
         self._tray.setIcon(_app_icon())
-        self._tray.setToolTip(f"Alertas de Calendarios — Sofisis  v{__version__}")
+        self._tray.setToolTip(f"Goujana Agenda  v{__version__}")
         self._tray.setVisible(True)
         self._tray.messageClicked.connect(self._on_notification_clicked)
         self._setup_menu()
@@ -125,7 +125,7 @@ class TrayApp:
             self.show_settings()
             return
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
+            client = GoujanaClient(self.config.server_url, self.config.api_token, self.config.timezone)
             appointments = client.get_today_appointments(self.config.user_id)
             now = datetime.now().astimezone()
             # Buscar el siguiente evento futuro o el más cercano
@@ -205,7 +205,7 @@ class TrayApp:
 
     def _on_attendance_confirmed(self, appt: Appointment):
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
+            client = GoujanaClient(self.config.server_url, self.config.api_token, self.config.timezone)
             client.confirm_attendance(appt.id)
         except Exception:
             pass
@@ -230,7 +230,7 @@ class TrayApp:
     # ── Cancelar tarea ────────────────────────────────────────────
     def _on_cancelled(self, appt: Appointment, new_observations: str):
         try:
-            client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
+            client = GoujanaClient(self.config.server_url, self.config.api_token, self.config.timezone)
             client.update_observations(appt.id, new_observations)
             self._tray.showMessage(
                 "Tarea cancelada",

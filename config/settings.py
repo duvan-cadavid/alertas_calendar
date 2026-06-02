@@ -7,7 +7,7 @@ CONFIG_FILE = CONFIG_DIR / 'config.json'
 
 _FIELDS = {
     'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone',
-    'recordings_folder', 'groq_api_key',
+    'recordings_folder',
     'rec_screen_name', 'rec_mic_id', 'rec_sys_id',
 }
 
@@ -22,7 +22,6 @@ class Config:
     minutes_before_warning: int = 5
     timezone: str = 'America/Bogota'
     recordings_folder: str = _DEFAULT_RECORDINGS
-    groq_api_key: str = ''
     rec_screen_name: str = ''   # xrandr / QScreen name  e.g. "DP-0"
     rec_mic_id: str = ''        # PulseAudio source name or dshow device
     rec_sys_id: str = ''        # system audio device ID

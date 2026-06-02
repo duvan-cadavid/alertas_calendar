@@ -102,8 +102,8 @@ def main():
     _write_pid()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("Alertas de Calendarios")
-    app.setApplicationDisplayName("Alertas de Calendarios — Sofisis")
+    app.setApplicationName("Goujana Agenda")
+    app.setApplicationDisplayName("Goujana Agenda")
     app.setWindowIcon(_app_icon())
     app.setQuitOnLastWindowClosed(False)
     _ensure_dependencies(app)

@@ -3,7 +3,7 @@ from typing import Dict, Set
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
-from api.client import SofisisClient, Appointment
+from api.client import GoujanaClient, Appointment
 from config.settings import Config
 
 
@@ -18,7 +18,7 @@ class EventScheduler(QObject):
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
         self.config = config
-        self._client: SofisisClient | None = None
+        self._client: GoujanaClient | None = None
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._check)
         self._notified_5min:  Set[int] = set()
@@ -26,7 +26,7 @@ class EventScheduler(QObject):
         self._start_times:    Dict[int, datetime] = {}
 
     def start(self) -> None:
-        self._client = SofisisClient(self.config.server_url, self.config.api_token, self.config.timezone)
+        self._client = GoujanaClient(self.config.server_url, self.config.api_token, self.config.timezone)
         self._check()
         self._timer.start(self.POLL_INTERVAL_MS)
 

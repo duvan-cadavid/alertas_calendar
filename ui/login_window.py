@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QScrollArea, QFrame,
 )
 
-from api.client import SofisisClient
+from api.client import GoujanaClient
 from config.settings import Config
 
 _STYLE = """
@@ -131,7 +131,7 @@ class SettingsWindow(QWidget):
         super().__init__()
         self.config = config
         self._on_save = on_save
-        self.setWindowTitle("Configuración — Alertas de Calendarios")
+        self.setWindowTitle("Configuración — Goujana Agenda")
         self.setMinimumSize(560, 500)
         self.resize(580, 680)
         self.setStyleSheet(_STYLE)
@@ -143,11 +143,11 @@ class SettingsWindow(QWidget):
         root.setSpacing(0)
 
         # ── Encabezado (fijo, fuera del scroll) ───────────────────
-        title = QLabel("Alertas de Calendarios")
+        title = QLabel("Goujana Agenda")
         title.setObjectName("title")
         root.addWidget(title)
 
-        subtitle = QLabel("Notificaciones de agenda en tiempo real — Sofisis")
+        subtitle = QLabel("Notificaciones de agenda en tiempo real")
         subtitle.setObjectName("subtitle")
         root.addWidget(subtitle)
 
@@ -169,7 +169,7 @@ class SettingsWindow(QWidget):
         f1.setSpacing(12)
         f1.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         self._url = QLineEdit(self.config.server_url)
-        self._url.setPlaceholderText("https://miempresa.sofisis.com")
+        self._url.setPlaceholderText("https://app.goujana.co")
         f1.addRow("URL del servidor:", self._url)
         self._token = QLineEdit(self.config.api_token)
         self._token.setPlaceholderText("Token de 32 caracteres")
@@ -186,7 +186,7 @@ class SettingsWindow(QWidget):
         self._user_id.setPlaceholderText("Ej: 42")
         f2.addRow("ID de usuario:", self._user_id)
         help_lbl = QLabel(
-            "Encuéntralo en la URL al editar tu perfil en Sofisis  "
+            "Encuéntralo en la URL al editar tu perfil en Goujana  "
             "(ej: /base_model_s/user/42/change/)"
         )
         help_lbl.setObjectName("help")
@@ -218,24 +218,6 @@ class SettingsWindow(QWidget):
         self._timezone.setCurrentIndex(idx)
         f3.addRow("Zona horaria:", self._timezone)
         form.addWidget(g3)
-
-        # Transcripción e IA
-        g_ai = QGroupBox("Transcripción e IA  (Groq)")
-        f_ai = QFormLayout(g_ai)
-        f_ai.setSpacing(12)
-        f_ai.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        self._groq_key = QLineEdit(self.config.groq_api_key)
-        self._groq_key.setPlaceholderText("gsk_…")
-        self._groq_key.setEchoMode(QLineEdit.EchoMode.Password)
-        f_ai.addRow("API Key:", self._groq_key)
-        groq_help = QLabel(
-            "Obtén tu clave gratis en console.groq.com  —  "
-            "incluye ~2 horas/día de transcripción sin costo"
-        )
-        groq_help.setObjectName("help")
-        groq_help.setWordWrap(True)
-        f_ai.addRow("", groq_help)
-        form.addWidget(g_ai)
 
         # Grabaciones
         g4 = QGroupBox("Grabaciones de pantalla")
@@ -299,7 +281,7 @@ class SettingsWindow(QWidget):
             return
         try:
             tz = self._timezone.currentData()
-            result = SofisisClient(url, token, timezone=tz).test_connection(uid)
+            result = GoujanaClient(url, token, timezone=tz).test_connection(uid)
             QMessageBox.information(self, "Conexión exitosa", f"✓  {result}")
         except Exception as e:
             QMessageBox.critical(self, "Error de conexión", f"No se pudo conectar:\n\n{e}")
@@ -318,7 +300,6 @@ class SettingsWindow(QWidget):
         self.config.minutes_before_warning = self._minutes.currentData()
         self.config.timezone               = self._timezone.currentData()
         self.config.recordings_folder      = self._rec_folder.text().strip() or self.config.recordings_folder
-        self.config.groq_api_key           = self._groq_key.text().strip()
         self.config.save()
         if self._on_save:
             self._on_save(self.config)

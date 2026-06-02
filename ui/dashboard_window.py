@@ -1,17 +1,30 @@
+import os
+import sys
 from datetime import datetime, date, timedelta
 from typing import List
 
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QGridLayout, QFrame, QSizePolicy, QApplication,
 )
 
-from api.client import Appointment, SofisisClient
+from api.client import Appointment, GoujanaClient
 from config.settings import Config
 from core.downloader import InstallerDownloader, launch_installer
 from core.updater import UpdateChecker
 from core.version import __version__
+
+
+def _logo_pixmap(size: int = 52) -> QPixmap:
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    path = os.path.join(base, 'assets', 'icon.png')
+    px = QPixmap(path)
+    if px.isNull():
+        return px
+    return px.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio,
+                     Qt.TransformationMode.SmoothTransformation)
 
 _MONTHS = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -120,7 +133,7 @@ class _FetchThread(QThread):
     done = pyqtSignal(list)
     fail = pyqtSignal(str)
 
-    def __init__(self, client: SofisisClient, user_id: str, parent=None):
+    def __init__(self, client: GoujanaClient, user_id: str, parent=None):
         super().__init__(parent)
         self._client = client
         self._user_id = user_id
@@ -233,14 +246,14 @@ class DashboardWindow(QWidget):
     def __init__(self, config: Config):
         super().__init__()
         self._config = config
-        self._client = SofisisClient(config.server_url, config.api_token, config.timezone)
+        self._client = GoujanaClient(config.server_url, config.api_token, config.timezone)
         self._thread: _FetchThread | None = None
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None
         self._update_url: str = ""
         self._update_btn: QPushButton | None = None
 
-        self.setWindowTitle("Agenda de Hoy — Alertas de Calendarios")
+        self.setWindowTitle("Agenda de Hoy — Goujana Agenda")
         self.setMinimumSize(860, 600)
         self.resize(1000, 680)
         self.setStyleSheet(_STYLE)
@@ -258,19 +271,35 @@ class DashboardWindow(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(14)
 
-        # ── Header: date + subtitle ───────────────────────────────
+        # ── Header: logo + date + subtitle ───────────────────────
+        header = QHBoxLayout()
+        header.setSpacing(16)
+
+        logo_lbl = QLabel()
+        px = _logo_pixmap(52)
+        if not px.isNull():
+            logo_lbl.setPixmap(px)
+        logo_lbl.setFixedSize(52, 52)
+        header.addWidget(logo_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
         today = date.today()
         date_lbl = QLabel(
             f"📅  {_DAYS[today.weekday()]}  {today.day} de {_MONTHS[today.month]} {today.year}")
         date_lbl.setObjectName('header_date')
-        root.addWidget(date_lbl)
+        text_col.addWidget(date_lbl)
 
         self._subtitle = QLabel("Cargando agenda…")
         self._subtitle.setObjectName('header_name')
         self._subtitle.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse |
             Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        root.addWidget(self._subtitle)
+        text_col.addWidget(self._subtitle)
+        header.addLayout(text_col)
+        header.addStretch()
+
+        root.addLayout(header)
 
         # ── Action button bar ─────────────────────────────────────
         root.addWidget(self._build_action_bar())

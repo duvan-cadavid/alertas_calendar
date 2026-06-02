@@ -44,11 +44,10 @@ def _strip_html(text: str) -> str:
 
 
 def _fmt(dt: datetime) -> str:
-    """Hora local sin zona horaria — formato que Sofisis espera en filtros."""
     return dt.strftime('%Y-%m-%dT%H:%M:%S')
 
 
-class SofisisClient:
+class GoujanaClient:
     _ENDPOINT = '/api/v1/schedule/appointment/'
 
     def __init__(self, server_url: str, api_token: str, timezone: str = 'America/Bogota'):

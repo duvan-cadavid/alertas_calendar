@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec para "Alertas de Calendarios"
+# PyInstaller spec para "Goujana Agenda"
 # Build: pyinstaller build/alertas.spec
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -57,7 +57,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Alertas de Calendarios',
+    name='Goujana Agenda',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -79,5 +79,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Alertas de Calendarios',
+    name='Goujana Agenda',
 )

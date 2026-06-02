@@ -513,13 +513,7 @@ class RecorderWindow(QWidget):
     # ── Transcription & Summary ───────────────────────────────────
 
     def _start_transcription(self, path: str):
-        api_key = self._config.groq_api_key
-        if not api_key:
-            self._trans_done = True
-            self._trans_text = '(Sin API key de Groq — transcripción no disponible)'
-            self._check_open_results()
-            return
-        self._transcriber = TranscriberThread(path, api_key, self)
+        self._transcriber = TranscriberThread(path, self)
         self._transcriber.done.connect(self._on_trans_done)
         self._transcriber.error.connect(self._on_trans_error)
         self._transcriber.start()
@@ -542,13 +536,7 @@ class RecorderWindow(QWidget):
         self._check_open_results()
 
     def _start_summary(self, transcription: str):
-        api_key = self._config.groq_api_key
-        if not api_key:
-            self._sum_done = True
-            self._sum_text = '(Sin API key de Groq — resumen no disponible)'
-            self._check_open_results()
-            return
-        self._summarizer = SummarizerThread(transcription, api_key, self)
+        self._summarizer = SummarizerThread(transcription, self)
         self._summarizer.done.connect(self._on_sum_done)
         self._summarizer.error.connect(self._on_sum_error)
         self._summarizer.start()

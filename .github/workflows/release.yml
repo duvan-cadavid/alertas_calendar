@@ -108,7 +108,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || format('v{0}', steps.ver.outputs.VERSION) }}
-          name: "Alertas de Calendarios v${{ steps.ver.outputs.VERSION }}"
+          name: "Goujana Agenda v${{ steps.ver.outputs.VERSION }}"
           files: dist/installer/*.exe
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}

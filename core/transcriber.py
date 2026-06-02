@@ -4,6 +4,7 @@ import sys
 import tempfile
 
 from PyQt6.QtCore import QThread, pyqtSignal
+from core.ai_config import GROQ_API_KEY
 from core.recorder import _get_ffmpeg_exe
 
 
@@ -23,21 +24,14 @@ class TranscriberThread(QThread):
     MODEL = 'whisper-large-v3-turbo'
     MAX_MB = 24   # Groq limit is 25 MB — keep a 1 MB margin
 
-    def __init__(self, media_path: str, api_key: str, parent=None):
+    def __init__(self, media_path: str, parent=None):
         super().__init__(parent)
         self._path = media_path
-        self._api_key = api_key
+        self._api_key = GROQ_API_KEY
 
     def run(self):
         tmp_audio = None
         try:
-            # ── Validate API key early ──────────────────────────────
-            if not self._api_key or not self._api_key.strip().startswith('gsk_'):
-                self.error.emit(
-                    'API key de Groq inválida o no configurada.\n'
-                    'Ve a ⚙ Configuración → Transcripción e IA y pega tu clave.'
-                )
-                return
 
             # ── Extract audio ───────────────────────────────────────
             self.progress.emit('Extrayendo audio…')

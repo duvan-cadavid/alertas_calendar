@@ -1,11 +1,11 @@
-; Inno Setup Script — Alertas de Calendarios
+; Inno Setup Script — Goujana Agenda
 ; Descarga Inno Setup: https://jrsoftware.org/isdl.php
 ; Compilar: iscc build\setup.iss
 
-#define AppName      "Alertas de Calendarios"
+#define AppName      "Goujana Agenda"
 #define AppVersion   "1.0.0"
-#define AppPublisher "Sofisis / Goujana"
-#define AppExeName   "Alertas de Calendarios.exe"
+#define AppPublisher "Goujana"
+#define AppExeName   "Goujana Agenda.exe"
 #define AppId        "{{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
 
 [Setup]
@@ -16,7 +16,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=..\dist\installer
-OutputBaseFilename=Alertas_de_Calendarios_Setup
+OutputBaseFilename=Goujana_Agenda_Setup
 SetupIconFile=..\assets\icon.ico
 Compression=lzma
 SolidCompression=yes

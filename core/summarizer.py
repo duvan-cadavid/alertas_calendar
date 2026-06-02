@@ -1,4 +1,5 @@
 from PyQt6.QtCore import QThread, pyqtSignal
+from core.ai_config import GROQ_API_KEY
 
 _SYSTEM = (
     'Eres un asistente especializado en analizar transcripciones de reuniones '
@@ -59,10 +60,10 @@ class SummarizerThread(QThread):
 
     MODEL = 'llama-3.3-70b-versatile'
 
-    def __init__(self, transcription: str, api_key: str, parent=None):
+    def __init__(self, transcription: str, parent=None):
         super().__init__(parent)
         self._text = transcription
-        self._api_key = api_key
+        self._api_key = GROQ_API_KEY
 
     def run(self):
         try:
