@@ -4,9 +4,8 @@ from typing import List
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QGridLayout, QFrame, QSizePolicy, QMenu,
+    QScrollArea, QGridLayout, QFrame, QSizePolicy, QApplication,
 )
-from PyQt6.QtGui import QAction
 
 from api.client import Appointment, SofisisClient
 from config.settings import Config
@@ -27,33 +26,22 @@ QWidget {
 QLabel#header_date { font-size: 22px; font-weight: bold; color: #89b4fa; }
 QLabel#header_name { font-size: 14px; color: #6c7086; }
 QLabel#loading     { font-size: 18px; color: #6c7086; }
-QPushButton#menu_btn {
-    background-color: #1e1e2e; color: #cdd6f4;
+
+QPushButton#bar_btn {
+    background-color: #1e1e2e; color: #a6adc8;
     border: 1px solid #313244; border-radius: 8px;
-    padding: 8px 16px; font-size: 18px;
-    min-width: 40px;
+    padding: 8px 4px; font-size: 13px;
 }
-QPushButton#menu_btn:hover  { background-color: #313244; }
-QPushButton#menu_btn:pressed { background-color: #45475a; }
-QMenu {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
-    border: 1px solid #313244;
-    border-radius: 8px;
-    padding: 4px;
-    font-size: 13px;
+QPushButton#bar_btn:hover  { background-color: #313244; color: #cdd6f4; }
+QPushButton#bar_btn:pressed { background-color: #45475a; }
+
+QPushButton#bar_btn_update_ready {
+    background-color: #1e3a5f; color: #89b4fa;
+    border: 2px solid #89b4fa; border-radius: 8px;
+    padding: 8px 4px; font-size: 13px; font-weight: bold;
 }
-QMenu::item {
-    padding: 8px 20px 8px 12px;
-    border-radius: 6px;
-}
-QMenu::item:selected  { background-color: #313244; }
-QMenu::item:disabled  { color: #45475a; }
-QMenu::separator {
-    height: 1px;
-    background: #313244;
-    margin: 4px 8px;
-}
+QPushButton#bar_btn_update_ready:hover { background-color: #264a73; }
+
 QScrollArea { border: none; background: transparent; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 """
@@ -145,7 +133,7 @@ class _FetchThread(QThread):
 
 
 class AppointmentCard(QFrame):
-    confirm_requested = pyqtSignal(int)   # appointment id
+    confirm_requested = pyqtSignal(int)
 
     def __init__(self, appt: Appointment):
         super().__init__()
@@ -170,7 +158,6 @@ class AppointmentCard(QFrame):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(6)
 
-        # Hora + badge
         top = QHBoxLayout()
         time_lbl = self._selectable(QLabel(f"⏰ {_fmt(appt.start_date)}  —  {_fmt(appt.end_date)}"))
         time_lbl.setObjectName('card_time')
@@ -183,7 +170,6 @@ class AppointmentCard(QFrame):
             top.addWidget(badge)
         layout.addLayout(top)
 
-        # Título
         title = self._selectable(QLabel(appt.text))
         title.setObjectName('card_title')
         title.setWordWrap(True)
@@ -195,7 +181,6 @@ class AppointmentCard(QFrame):
         sep.setFixedHeight(1)
         layout.addWidget(sep)
 
-        # Info
         if appt.customer_name:
             info = self._selectable(QLabel(f"👤  {appt.customer_name}"))
             info.setObjectName('card_info')
@@ -207,12 +192,12 @@ class AppointmentCard(QFrame):
             layout.addWidget(svc)
 
         if appt.observations:
-            obs = self._selectable(QLabel(f"📝  {appt.observations[:120]}{'…' if len(appt.observations) > 120 else ''}"))
+            obs = self._selectable(QLabel(
+                f"📝  {appt.observations[:120]}{'…' if len(appt.observations) > 120 else ''}"))
             obs.setObjectName('card_info')
             obs.setWordWrap(True)
             layout.addWidget(obs)
 
-        # Botón confirmar asistencia
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self._confirm_btn = QPushButton()
@@ -253,7 +238,7 @@ class DashboardWindow(QWidget):
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None
         self._update_url: str = ""
-        self._update_action: QAction | None = None
+        self._update_btn: QPushButton | None = None
 
         self.setWindowTitle("Agenda de Hoy — Alertas de Calendarios")
         self.setMinimumSize(860, 600)
@@ -266,41 +251,38 @@ class DashboardWindow(QWidget):
         self._timer.start(self.REFRESH_MS)
         self._load()
 
+    # ── UI ────────────────────────────────────────────────────────
+
     def _build_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(16)
+        root.setSpacing(14)
 
-        header = QHBoxLayout()
-        left = QVBoxLayout()
+        # ── Header: date + subtitle ───────────────────────────────
         today = date.today()
-        date_lbl = QLabel(f"📅  {_DAYS[today.weekday()]}  {today.day} de {_MONTHS[today.month]} {today.year}")
+        date_lbl = QLabel(
+            f"📅  {_DAYS[today.weekday()]}  {today.day} de {_MONTHS[today.month]} {today.year}")
         date_lbl.setObjectName('header_date')
-        left.addWidget(date_lbl)
+        root.addWidget(date_lbl)
 
         self._subtitle = QLabel("Cargando agenda…")
         self._subtitle.setObjectName('header_name')
         self._subtitle.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse |
             Qt.TextInteractionFlag.TextSelectableByKeyboard)
-        left.addWidget(self._subtitle)
+        root.addWidget(self._subtitle)
 
-        header.addLayout(left)
-        header.addStretch()
+        # ── Action button bar ─────────────────────────────────────
+        root.addWidget(self._build_action_bar())
 
-        menu_btn = QPushButton('⋮')
-        menu_btn.setObjectName('menu_btn')
-        menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        menu_btn.clicked.connect(self._show_menu)
-        header.addWidget(menu_btn)
-        root.addLayout(header)
-
+        # ── Separator ─────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet('background-color: #313244;')
         sep.setFixedHeight(1)
         root.addWidget(sep)
 
+        # ── Appointment grid ──────────────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -314,6 +296,7 @@ class DashboardWindow(QWidget):
         scroll.setWidget(self._grid_container)
         root.addWidget(scroll)
 
+        # ── Footer ────────────────────────────────────────────────
         self._footer = QLabel("Actualización automática cada minuto")
         self._footer.setStyleSheet("color: #45475a; font-size: 11px;")
         self._footer.setAlignment(Qt.AlignmentFlag.AlignRight)
@@ -322,27 +305,35 @@ class DashboardWindow(QWidget):
             Qt.TextInteractionFlag.TextSelectableByKeyboard)
         root.addWidget(self._footer)
 
-    def _show_menu(self):
-        menu = QMenu(self)
+    def _build_action_bar(self) -> QWidget:
+        bar = QWidget()
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
 
-        menu.addAction('↻  Actualizar agenda', self._load)
-        menu.addSeparator()
-        menu.addAction('🎬  Grabar pantalla',  self.open_recorder)
-        menu.addSeparator()
-        menu.addAction('⚙   Configuración',    self.open_settings)
-        menu.addAction('🔔  Probar alerta',    self.test_alert)
-        menu.addSeparator()
+        def _btn(label: str, slot) -> QPushButton:
+            b = QPushButton(label)
+            b.setObjectName('bar_btn')
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            b.clicked.connect(slot)
+            return b
 
-        self._update_action = menu.addAction(
-            f'🔄  Buscar actualizaciones  v{__version__}',
-            self._check_for_updates,
-        )
-        if self._update_url:
-            self._update_action.setText('🔄  Nueva versión — Instalar')
+        layout.addWidget(_btn('↻  Actualizar',      self._load))
+        layout.addWidget(_btn('🎬  Grabar pantalla', self.open_recorder))
+        layout.addWidget(_btn('⚙  Configuración',   self.open_settings))
+        layout.addWidget(_btn('🔔  Probar alerta',   self.test_alert))
 
-        btn = self.sender()
-        pos = btn.mapToGlobal(btn.rect().bottomLeft())
-        menu.exec(pos)
+        self._update_btn = QPushButton(f'🔄  v{__version__}')
+        self._update_btn.setObjectName('bar_btn')
+        self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._update_btn.clicked.connect(self._check_for_updates)
+        layout.addWidget(self._update_btn)
+
+        return bar
+
+    # ── Update flow ───────────────────────────────────────────────
 
     def _check_for_updates(self) -> None:
         if self._update_url:
@@ -358,18 +349,22 @@ class DashboardWindow(QWidget):
 
     def _on_update_found(self, version: str, url: str) -> None:
         self._update_url = url
-        self._subtitle.setText(f'🔄  v{version} disponible — abre el menú ⋮ para instalar')
+        self._subtitle.setText(f'🔄  v{version} disponible')
+        self._update_btn.setText(f'🔄  Instalar v{version}')
+        self._update_btn.setObjectName('bar_btn_update_ready')
+        self._update_btn.setStyleSheet('')   # force Qt to re-evaluate the object name
 
     def _on_check_done(self) -> None:
         if self._update_url:
             return
         self._subtitle.setText('✓  Versión actualizada')
-        QTimer.singleShot(3_000, self._load)   # reload will restore normal subtitle
+        QTimer.singleShot(3_000, self._load)
 
     def _start_download(self) -> None:
         if self._downloader and self._downloader.isRunning():
             return
         self._subtitle.setText('⬇  Descargando actualización…  0%')
+        self._update_btn.setEnabled(False)
         self._downloader = InstallerDownloader(self._update_url)
         self._downloader.progress.connect(
             lambda p: self._subtitle.setText(f'⬇  Descargando…  {p}%'))
@@ -384,6 +379,9 @@ class DashboardWindow(QWidget):
 
     def _on_download_error(self, msg: str) -> None:
         self._subtitle.setText(f'✗  Error al descargar: {msg[:60]}')
+        self._update_btn.setEnabled(True)
+
+    # ── Appointments ──────────────────────────────────────────────
 
     def _load(self):
         if self._thread and self._thread.isRunning():

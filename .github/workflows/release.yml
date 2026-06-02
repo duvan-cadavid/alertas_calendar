@@ -113,9 +113,10 @@ jobs:
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}
 
-            - **Barra de micrófono en tiempo real** — usa `IAudioMeterInformation` de Windows Core Audio (via ctypes, sin dependencias extra) para mostrar el nivel real del micrófono, no una animación aleatoria
-            - **Fix: micrófonos detectados correctamente** — el parser dshow ahora entiende el formato de FFmpeg 8.x (`"Nombre" (audio)`)
-            - **Fix: audio capturado con dshow** — essentials build no incluye WASAPI; ahora se usa DirectShow
+            - **Barra de acciones visible en el dashboard** — las opciones de Actualizar, Grabar pantalla, Configuración, Probar alerta y Actualizar app ahora son botones siempre visibles, sin menú desplegable
+            - **Barra de micrófono en tiempo real** — usa `IAudioMeterInformation` de Windows Core Audio para mostrar el nivel real del micrófono
+            - **Fix: micrófonos detectados correctamente** — parser dshow actualizado para FFmpeg 8.x
+            - **Fix: audio capturado con dshow** — DirectShow reemplaza WASAPI (no incluido en essentials)
             - **Fix: FFmpeg bundled detectado correctamente** — busca `ffmpeg.exe` en `bin\` antes del PATH
 
             ## Descarga e instalación
