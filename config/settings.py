@@ -5,7 +5,11 @@ from pathlib import Path
 CONFIG_DIR = Path.home() / '.alertas_calendario'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
 
-_FIELDS = {'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone', 'recordings_folder', 'groq_api_key'}
+_FIELDS = {
+    'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone',
+    'recordings_folder', 'groq_api_key',
+    'rec_screen_name', 'rec_mic_id', 'rec_sys_id',
+}
 
 _DEFAULT_RECORDINGS = str(Path.home() / 'Videos' / 'goujana')
 
@@ -19,6 +23,9 @@ class Config:
     timezone: str = 'America/Bogota'
     recordings_folder: str = _DEFAULT_RECORDINGS
     groq_api_key: str = ''
+    rec_screen_name: str = ''   # xrandr / QScreen name  e.g. "DP-0"
+    rec_mic_id: str = ''        # PulseAudio source name or dshow device
+    rec_sys_id: str = ''        # system audio device ID
 
     def is_configured(self) -> bool:
         return bool(self.server_url and self.api_token and self.user_id)
