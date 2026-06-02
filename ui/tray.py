@@ -34,6 +34,8 @@ class TrayApp:
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None
         self._update_action = None
+        self._recording_prompt = None
+        self._rec_prompt_timer: QTimer | None = None
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self._start_update_check)
         self._update_timer.start(6 * 3600 * 1_000)  # re-verificar cada 6 horas
@@ -209,7 +211,32 @@ class TrayApp:
             client.confirm_attendance(appt.id)
         except Exception:
             pass
-        
+        self._show_recording_prompt(appt, show_cancel=False)
+
+    def _show_recording_prompt(self, appt: Appointment, show_cancel: bool = False):
+        from ui.recording_prompt import RecordingPromptWindow
+        self._recording_prompt = RecordingPromptWindow(appt, show_cancel=show_cancel)
+        self._recording_prompt.record_now.connect(self.show_recorder)
+        self._recording_prompt.record_later.connect(
+            lambda: self._snooze_recording_prompt(appt))
+        self._recording_prompt.dismissed.connect(lambda: None)
+        self._recording_prompt.show()
+
+    def _snooze_recording_prompt(self, appt: Appointment):
+        if self._rec_prompt_timer:
+            self._rec_prompt_timer.stop()
+        self._rec_prompt_timer = QTimer()
+        self._rec_prompt_timer.setSingleShot(True)
+        self._rec_prompt_timer.timeout.connect(
+            lambda: self._show_recording_prompt(appt, show_cancel=True))
+        self._rec_prompt_timer.start(5 * 60 * 1_000)
+        self._tray.showMessage(
+            "Grabación pospuesta",
+            "⏱  Se recordará en 5 minutos.",
+            QSystemTrayIcon.MessageIcon.Information,
+            4_000,
+        )
+
 
     # ── Posponer ──────────────────────────────────────────────────
     def _on_snoozed(self, appt: Appointment, minutes: int):
