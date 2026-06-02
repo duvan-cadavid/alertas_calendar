@@ -55,12 +55,20 @@ class TranscriberThread(QThread):
                 )
 
             lines = []
-            if hasattr(result, 'segments') and result.segments:
-                for seg in result.segments:
-                    mins, secs = divmod(int(seg.start), 60)
-                    lines.append(f'[{mins:02d}:{secs:02d}] {seg.text.strip()}')
-            else:
-                lines.append(result.text)
+            segments = getattr(result, 'segments', None) or []
+            for seg in segments:
+                # Groq may return segments as dicts or as objects depending
+                # on the library version — handle both transparently
+                if isinstance(seg, dict):
+                    start = seg.get('start', 0)
+                    text  = seg.get('text', '').strip()
+                else:
+                    start = seg.start
+                    text  = seg.text.strip()
+                mins, secs = divmod(int(start), 60)
+                lines.append(f'[{mins:02d}:{secs:02d}] {text}')
+            if not lines:
+                lines.append(getattr(result, 'text', '') or '')
 
             self.done.emit('\n'.join(lines))
 
