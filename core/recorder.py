@@ -557,7 +557,23 @@ class ScreenRecorder(QObject):
                 cmd += ['-f', 'pulse', '-i', self._sys]
             audio_n += 1
 
-        cmd += ['-vf', 'scale=1280:720', '-c:v', 'libx264', '-crf', '28', '-preset', 'fast']
+        # yuv420p  → required by WhatsApp, Android, iOS and all hardware decoders.
+        #            Screen capture defaults to yuv444p which Chrome plays but
+        #            mobile devices show as black video.
+        # baseline → H.264 Baseline profile: widest device compatibility.
+        # level 4.0 → supports up to 1080p30; accepted by all WhatsApp clients.
+        # scale with force_original_aspect_ratio + pad ensures even dimensions
+        # (H.264 requires width and height divisible by 2).
+        cmd += [
+            '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,'
+                   'pad=1280:720:(ow-iw)/2:(oh-ih)/2',
+            '-c:v', 'libx264',
+            '-profile:v', 'baseline',
+            '-level:v', '4.0',
+            '-pix_fmt', 'yuv420p',
+            '-crf', '28',
+            '-preset', 'fast',
+        ]
 
         if audio_n == 2:
             cmd += [
