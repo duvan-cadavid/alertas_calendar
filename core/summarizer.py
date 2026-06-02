@@ -1,23 +1,52 @@
 from PyQt6.QtCore import QThread, pyqtSignal
 
 _SYSTEM = (
-    'Eres un asistente especializado en resumir reuniones y citas profesionales '
-    'en español latinoamericano. Eres preciso, conciso y estructurado.'
+    'Eres un asistente especializado en analizar transcripciones de reuniones '
+    'y tareas profesionales en español latinoamericano. '
+    'Eres preciso, conciso y estructurado. '
+    'Nunca inventas información que no esté en la transcripción.'
 )
 
-_PROMPT = """Analiza la siguiente transcripción y genera un resumen estructurado.
+_PROMPT = """Analiza la siguiente transcripción y sigue estos pasos:
 
-**Resumen ejecutivo**
-(2-3 oraciones que describan de qué trató la reunión o cita)
+PASO 1 — Clasifica el tipo de evento:
+- REUNIÓN: participan dos o más personas, hay diálogo, se discuten temas, se toman decisiones.
+- TAREA: una persona ejecuta una actividad, explica un proceso, realiza un trabajo individual.
 
-**Temas tratados**
-(lista de los principales temas discutidos)
+PASO 2 — Genera el resumen según el tipo detectado.
 
-**Acuerdos y compromisos**
-(lo que se acordó hacer; escribe "Ninguno identificado" si no hay)
+━━━ Si es REUNIÓN, usa exactamente esta estructura:
 
-**Próximos pasos**
-(acciones pendientes; escribe "Ninguno identificado" si no hay)
+## 📋 Tipo de evento
+Reunión
+
+## 🗂 Temas tratados
+(lista numerada de los temas discutidos, en orden de aparición)
+
+## 📝 Resumen ejecutivo
+(2-3 oraciones que describan el propósito y resultado general de la reunión)
+
+## 🕐 Duración
+Inicio: [hora de inicio si se menciona, si no: "No especificado"]
+Fin: [hora de fin si se menciona, si no: "No especificado"]
+
+## 🤝 Acuerdos y compromisos
+(lista cada acuerdo con su responsable; formato: "• [acuerdo] — Responsable: [nombre o cargo]")
+(si no hay: "Ninguno identificado")
+
+━━━ Si es TAREA, usa exactamente esta estructura:
+
+## 📋 Tipo de evento
+Tarea
+
+## 📝 Resumen de la tarea
+(2-3 oraciones describiendo qué tarea se realizó y su contexto)
+
+## ✅ Logros y resultados
+(lista numerada de lo que se completó o avanzó durante la tarea)
+(si no hay logros claros: "No se identificaron logros específicos")
+
+━━━
 
 Transcripción:
 {text}"""
