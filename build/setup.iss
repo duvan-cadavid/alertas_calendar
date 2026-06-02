@@ -52,7 +52,8 @@ Filename: "{app}\{#AppExeName}"; Description: "Iniciar {#AppName} ahora"; Flags:
 
 [Code]
 const
-  ENV_KEY = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  ENV_KEY          = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  WM_SETTINGCHANGE = $001A;
 
 { ── PATH helpers ─────────────────────────────────────────────────────────── }
 
