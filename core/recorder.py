@@ -3,6 +3,7 @@ import sys
 import shutil
 import subprocess
 import tempfile
+import threading
 from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
@@ -312,12 +313,28 @@ class _SegmentThread(QThread):
                 self._cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,   # capturar para diagnóstico
+                stderr=subprocess.PIPE,
             )
-            _, stderr_bytes = self._proc.communicate()
+
+            # Read stderr in a background thread to prevent pipe-buffer
+            # deadlock — keeping stdin OPEN so stop() can send 'q' later.
+            # communicate() would close stdin immediately, making 'q' impossible.
+            buf: List[bytes] = []
+            def _read_stderr():
+                try:
+                    for chunk in iter(lambda: self._proc.stderr.read(4096), b''):
+                        buf.append(chunk)
+                except Exception:
+                    pass
+            reader = threading.Thread(target=_read_stderr, daemon=True)
+            reader.start()
+
+            self._proc.wait()           # blocks until FFmpeg exits
+            reader.join(timeout=3)
+            stderr_bytes = b''.join(buf)
             rc = self._proc.returncode
 
-            # Código 255 es la salida normal cuando FFmpeg recibe 'q'
+            # 0 = natural end, 255 = received 'q', negative = killed
             normal_exit = rc in (0, 255) or self._stopping
             file_ok = os.path.exists(self._output) and os.path.getsize(self._output) > 0
 
@@ -339,9 +356,12 @@ class _SegmentThread(QThread):
         self._stopping = True
         if self._proc and self._proc.poll() is None:
             try:
+                # Send 'q' — FFmpeg stops gracefully and writes the moov atom
                 self._proc.stdin.write(b'q')
                 self._proc.stdin.flush()
-                self._proc.wait(timeout=10)
+                self._proc.stdin.close()
+                # Allow up to 30 s to finalize the file (large moov atoms)
+                self._proc.wait(timeout=30)
             except Exception:
                 self._proc.kill()
                 self._proc.wait()
@@ -363,17 +383,27 @@ class _ConcatThread(QThread):
     def run(self):
         try:
             if len(self._segments) == 1:
-                shutil.copy2(self._segments[0], self._output)
+                # Re-mux with faststart so the moov atom is at the front.
+                # shutil.copy2 would preserve a potentially unplayable file.
+                cmd = [
+                    'ffmpeg', '-y', '-i', self._segments[0],
+                    '-c', 'copy', '-movflags', '+faststart',
+                    self._output,
+                ]
             else:
                 list_path = os.path.join(self._tmp.name, 'list.txt')
                 with open(list_path, 'w', encoding='utf-8') as f:
                     for seg in self._segments:
                         f.write(f"file '{seg}'\n")
-                cmd = ['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
-                       '-i', list_path, '-c', 'copy', self._output]
-                r = subprocess.run(cmd, capture_output=True, timeout=600)
-                if r.returncode != 0:
-                    raise RuntimeError(r.stderr.decode(errors='replace')[-300:])
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'concat', '-safe', '0', '-i', list_path,
+                    '-c', 'copy', '-movflags', '+faststart',
+                    self._output,
+                ]
+            r = subprocess.run(cmd, capture_output=True, timeout=600)
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr.decode(errors='replace')[-400:])
             self.done.emit(self._output)
         except Exception as e:
             self.error.emit(str(e))
