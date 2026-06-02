@@ -26,9 +26,19 @@ class ScreenInfo:
 
 
 def get_screens() -> List[ScreenInfo]:
-    """Return screens with physical pixel dimensions and correct X11/GDI positions."""
+    """Return screens with physical pixel dimensions and correct capture positions.
+
+    Uses platform-native APIs so coordinates are correct for any multi-monitor
+    setup regardless of DPI mix, resolution, or number of screens:
+      - Linux X11:  xrandr --query  (matched by connector name, then by size)
+      - Windows:    EnumDisplayMonitors via ctypes  (matched by physical size)
+      - Fallback:   Qt geometry × devicePixelRatio (works for same-DPI setups)
+    """
     qt_screens = QApplication.screens()
-    phys_map = _xrandr_geometry(qt_screens) if sys.platform != 'win32' else {}
+    if sys.platform == 'win32':
+        phys_map = _win32_monitor_positions(qt_screens)
+    else:
+        phys_map = _xrandr_geometry(qt_screens)
 
     result = []
     for i, s in enumerate(qt_screens):
@@ -37,7 +47,7 @@ def get_screens() -> List[ScreenInfo]:
         if i in phys_map:
             x, y, w, h = phys_map[i]
         else:
-            # Windows or xrandr unavailable — gdigrab uses physical coords
+            # Fallback — works when all monitors share the same DPI ratio
             x = round(g.x() * ratio)
             y = round(g.y() * ratio)
             w = round(g.width() * ratio)
@@ -47,33 +57,111 @@ def get_screens() -> List[ScreenInfo]:
 
 
 def _xrandr_geometry(qt_screens: list) -> dict:
-    """Match each Qt screen to its xrandr physical geometry by resolution.
+    """Map Qt screen index → (x, y, w, h) in X11 physical pixels via xrandr.
 
-    Sorting by index alone is wrong because Qt lists primary first while
-    xrandr orders by connector name.  Matching by (width, height) is reliable
-    as long as no two monitors share the exact same resolution.
+    Matching strategy (in order):
+      1. Connector name — QScreen.name() matches the xrandr output name
+         (DP-0, HDMI-1, eDP-1…).  Works even with identical resolutions.
+      2. Physical resolution — fallback for systems where Qt names differ.
+         Uses a 'used positions' set to avoid assigning the same monitor twice.
     """
     import re
     out: dict = {}
     try:
         r = subprocess.run(['xrandr', '--query'], capture_output=True, text=True, timeout=5)
-        xrandr = [
-            (int(w), int(h), int(x), int(y))
-            for w, h, x, y in re.findall(
-                r' connected(?: primary)? (\d+)x(\d+)\+(\d+)\+(\d+)', r.stdout
-            )
-        ]
+
+        # connector_name → (x, y, w, h)
+        by_name: dict = {}
+        # (w, h) → list of (x, y, w, h)  — for the fallback
+        by_size: dict = {}
+        for m in re.finditer(
+            r'^(\S+) connected(?: primary)? (\d+)x(\d+)\+(\d+)\+(\d+)',
+            r.stdout, re.MULTILINE,
+        ):
+            name = m.group(1)
+            w, h, x, y = int(m.group(2)), int(m.group(3)), int(m.group(4)), int(m.group(5))
+            by_name[name] = (x, y, w, h)
+            by_size.setdefault((w, h), []).append((x, y, w, h))
+
+        used_xy: set = set()
         for i, s in enumerate(qt_screens):
             g = s.geometry()
             ratio = s.devicePixelRatio()
-            phys_w = round(g.width() * ratio)
-            phys_h = round(g.height() * ratio)
-            for w, h, x, y in xrandr:
-                if w == phys_w and h == phys_h:
-                    out[i] = (x, y, w, h)
+            pw = round(g.width() * ratio)
+            ph = round(g.height() * ratio)
+
+            # Strategy 1: name match
+            if s.name() in by_name:
+                entry = by_name[s.name()]
+                out[i] = entry
+                used_xy.add(entry[:2])
+                continue
+
+            # Strategy 2: size match (skip already-assigned positions)
+            for entry in by_size.get((pw, ph), []):
+                if entry[:2] not in used_xy:
+                    out[i] = entry
+                    used_xy.add(entry[:2])
                     break
+
     except Exception:
         pass
+    return out
+
+
+def _win32_monitor_positions(qt_screens: list) -> dict:
+    """Map Qt screen index → (x, y, w, h) in physical pixels via Win32.
+
+    EnumDisplayMonitors returns MONITORINFO.rcMonitor in physical virtual-desktop
+    coordinates — the same system gdigrab uses — regardless of per-monitor DPI.
+    Matching is done by physical resolution (w × h), tracking already-used
+    entries so identical monitors are assigned to different Qt screens.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ('cbSize',    wintypes.DWORD),
+            ('rcMonitor', wintypes.RECT),
+            ('rcWork',    wintypes.RECT),
+            ('dwFlags',   wintypes.DWORD),
+        ]
+
+    monitors: list = []
+
+    def _cb(hMon, _hDC, _lpRect, _lParam):
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        ctypes.windll.user32.GetMonitorInfoW(hMon, ctypes.byref(info))
+        r = info.rcMonitor
+        monitors.append((r.left, r.top, r.right - r.left, r.bottom - r.top))
+        return True
+
+    MonitorEnumProc = ctypes.WINFUNCTYPE(
+        ctypes.c_bool,
+        ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(wintypes.RECT),
+        ctypes.c_void_p,
+    )
+    cb = MonitorEnumProc(_cb)   # keep alive until EnumDisplayMonitors returns
+    try:
+        ctypes.windll.user32.EnumDisplayMonitors(None, None, cb, None)
+    except Exception:
+        return {}
+
+    out: dict = {}
+    used: set = set()
+    for i, s in enumerate(qt_screens):
+        g = s.geometry()
+        ratio = s.devicePixelRatio()
+        pw = round(g.width() * ratio)
+        ph = round(g.height() * ratio)
+        for j, (x, y, w, h) in enumerate(monitors):
+            if j not in used and w == pw and h == ph:
+                out[i] = (x, y, w, h)
+                used.add(j)
+                break
     return out
 
 
