@@ -1,21 +1,20 @@
 import math
+import subprocess
 import sys
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QBrush
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QApplication
 
-# ── Windows Core Audio peak meter (no extra deps) ─────────────────────────────
+# ── Windows: IAudioMeterInformation peak reader ───────────────────────────────
 if sys.platform == 'win32':
     import ctypes
     import uuid as _uuid_mod
 
     class _GUID(ctypes.Structure):
         _fields_ = [
-            ('Data1', ctypes.c_uint32),
-            ('Data2', ctypes.c_uint16),
-            ('Data3', ctypes.c_uint16),
-            ('Data4', ctypes.c_uint8 * 8),
+            ('Data1', ctypes.c_uint32), ('Data2', ctypes.c_uint16),
+            ('Data3', ctypes.c_uint16), ('Data4', ctypes.c_uint8 * 8),
         ]
 
     def _make_guid(s: str) -> '_GUID':
@@ -30,29 +29,20 @@ if sys.platform == 'win32':
         return g
 
     class _WindowsMicMeter:
-        """IAudioMeterInformation peak reader — zero extra dependencies.
-
-        Reads the Windows default capture device peak (same value shown in
-        the Sound settings microphone level indicator).  Qt initializes COM
-        on the main thread before this is ever called, so no CoInitialize
-        call is needed here.
-        """
-        _CLSCTX_ALL = 23
-        _eCapture   = 1   # eDataFlow
-        _eConsole   = 0   # eRole
+        """IAudioMeterInformation — reads default capture device peak (0.0–1.0)."""
+        _CLSCTX = 23
+        _eCapture = 1
+        _eConsole = 0
 
         def __init__(self):
-            self._meter: int = 0   # raw IAudioMeterInformation pointer
-            self._sz = ctypes.sizeof(ctypes.c_void_p)
+            self._meter = 0
+            self._sz    = ctypes.sizeof(ctypes.c_void_p)
             try:
                 self._open()
             except Exception:
                 pass
 
-        # ── vtable helpers ────────────────────────────────────────
-
         def _fn(self, obj: int, slot: int, *argtypes):
-            """Return a callable for vtable method at `slot` on `obj`."""
             vtbl = ctypes.cast(obj, ctypes.POINTER(ctypes.c_void_p)).contents.value
             addr = ctypes.cast(
                 ctypes.c_void_p(vtbl + slot * self._sz),
@@ -61,27 +51,21 @@ if sys.platform == 'win32':
             return ctypes.WINFUNCTYPE(ctypes.HRESULT, ctypes.c_void_p, *argtypes)(addr)
 
         def _release(self, obj: int):
-            self._fn(obj, 2)(obj)   # IUnknown::Release
-
-        # ── COM setup ─────────────────────────────────────────────
+            self._fn(obj, 2)(obj)
 
         def _open(self):
             ole32 = ctypes.windll.ole32
-
             CLSID = _make_guid('{BCDE0395-E52F-467C-8E3D-C4579291692E}')
             IID_E = _make_guid('{A95664D2-9614-4F35-A746-DE8DB63617E6}')
             IID_M = _make_guid('{C02216F6-8C67-4B5B-9D00-D008E73E0064}')
 
-            # CoCreateInstance → IMMDeviceEnumerator
             enum = ctypes.c_void_p()
-            hr = ole32.CoCreateInstance(
-                ctypes.byref(CLSID), None, self._CLSCTX_ALL,
+            if ole32.CoCreateInstance(
+                ctypes.byref(CLSID), None, self._CLSCTX,
                 ctypes.byref(IID_E), ctypes.byref(enum),
-            )
-            if hr < 0 or not enum.value:
+            ) < 0 or not enum.value:
                 return
 
-            # GetDefaultAudioEndpoint(eCapture, eConsole, &dev)  [vtable slot 4]
             dev = ctypes.c_void_p()
             hr = self._fn(enum.value, 4,
                           ctypes.c_int, ctypes.c_int,
@@ -91,29 +75,23 @@ if sys.platform == 'win32':
             if hr < 0 or not dev.value:
                 return
 
-            # IMMDevice::Activate(IID_M, CLSCTX_ALL, NULL, &meter)  [vtable slot 3]
             meter = ctypes.c_void_p()
             hr = self._fn(dev.value, 3,
                           ctypes.POINTER(_GUID), ctypes.c_uint,
                           ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p))(
-                dev.value, ctypes.byref(IID_M), self._CLSCTX_ALL,
+                dev.value, ctypes.byref(IID_M), self._CLSCTX,
                 None, ctypes.byref(meter))
             self._release(dev.value)
-            if hr < 0 or not meter.value:
-                return
-
-            self._meter = meter.value
-
-        # ── Public API ────────────────────────────────────────────
+            if hr >= 0 and meter.value:
+                self._meter = meter.value
 
         def peak(self) -> float:
-            """Return 0.0–1.0, or -1.0 if unavailable (triggers fallback animation)."""
+            """Return 0.0–1.0, or -1.0 when unavailable (triggers fallback animation)."""
             if not self._meter:
                 return -1.0
             try:
                 val = ctypes.c_float()
-                hr = self._fn(self._meter, 3,
-                              ctypes.POINTER(ctypes.c_float))(
+                hr  = self._fn(self._meter, 3, ctypes.POINTER(ctypes.c_float))(
                     self._meter, ctypes.byref(val))
                 return max(0.0, min(1.0, val.value)) if hr >= 0 else -1.0
             except Exception:
@@ -125,8 +103,63 @@ if sys.platform == 'win32':
                 self._meter = 0
 
 
-# ── Style ──────────────────────────────────────────────────────────────────────
+# ── Linux: parec-based microphone level reader ────────────────────────────────
+class _LinuxMicReader(QThread):
+    """Reads raw audio from PulseAudio/PipeWire default source via parec.
 
+    Emits level_ready(float) with RMS amplitude 0.0–1.0 every ~100 ms.
+    Falls back gracefully if parec is not installed.
+    """
+    level_ready = pyqtSignal(float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._proc = None
+
+    def run(self):
+        import select
+        try:
+            self._proc = subprocess.Popen(
+                ['parec', '--device=@DEFAULT_SOURCE@',
+                 '--channels=1', '--rate=8000', '--format=u8'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            chunk = 800   # 100 ms at 8 kHz mono u8
+            while not self.isInterruptionRequested():
+                ready, _, _ = select.select([self._proc.stdout], [], [], 0.15)
+                if not ready:
+                    continue
+                data = self._proc.stdout.read(chunk)
+                if not data:
+                    break
+                # u8 center = 128; signed amplitude → RMS / 128 → 0.0-1.0
+                rms = math.sqrt(
+                    sum((b - 128) ** 2 for b in data) / len(data)
+                ) / 128.0
+                self.level_ready.emit(min(1.0, rms))
+        except Exception:
+            pass
+        finally:
+            if self._proc:
+                try:
+                    self._proc.terminate()
+                    self._proc.wait(timeout=1)
+                except Exception:
+                    pass
+
+    def stop(self):
+        self.requestInterruption()
+        if self._proc:
+            try:
+                self._proc.terminate()
+            except Exception:
+                pass
+        self.quit()
+        self.wait(1500)
+
+
+# ── VU bar ────────────────────────────────────────────────────────────────────
 _STYLE = """
 QWidget#indicator {
     background-color: #11111b;
@@ -154,45 +187,79 @@ _BAR_HEIGHT = 8
 _BAR_W      = 220
 
 
+def _to_display(peak: float) -> float:
+    """Map linear amplitude 0–1 to display level 0–1 on a dB scale.
+
+    Range: –50 dB (silence) → 0 %,  0 dB (full scale) → 100 %.
+    This gives natural visual sensitivity: quiet speech sits in the
+    green zone instead of barely moving a linear bar.
+    """
+    db = 20.0 * math.log10(max(peak, 1e-6))
+    return max(0.0, min(1.0, (db + 50.0) / 50.0))
+
+
+# Color-zone thresholds (on the 0–1 display scale after log mapping):
+#  < 0.35  → gray   — too quiet for clear speech  (< –32 dBFS)
+#  0.35–0.80 → green  — good level for human ear   (–32 to –10 dBFS)
+#  0.80–0.93 → yellow — getting loud               (–10 to –3.5 dBFS)
+#  ≥ 0.93  → red    — shouting / clipping risk    (> –3.5 dBFS)
+_GRAY   = QColor('#585b70')
+_GREEN  = QColor('#a6e3a1')
+_YELLOW = QColor('#f9e2af')
+_RED    = QColor('#f38ba8')
+
+
 class _VuBar(QWidget):
-    """Microphone level bar.  Accepts real peak values or falls back to animation."""
+    """Microphone level bar with dB-scale display and four-zone color coding."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(_BAR_W, _BAR_HEIGHT + 4)
-        self._level  = 0.0
-        self._anim_t = 0   # tick counter used only for the fallback animation
+        self._display = 0.0   # display level 0–1 after log mapping
+        self._anim_t  = 0     # tick counter for fallback animation only
 
-    def set_level(self, level: float):
-        """level: 0.0–1.0 (real peak) or -1.0 to advance the fallback animation."""
-        if level < 0.0:
-            # No meter available — keep the sine-wave animation
+    def set_level(self, peak: float):
+        """peak: raw linear 0.0–1.0, or < 0 to advance the fallback animation."""
+        if peak < 0.0:
+            # No real meter available — sine-wave animation fallback
             self._anim_t += 1
             base   = 0.45 + 0.35 * abs(math.sin(self._anim_t * 0.18))
             ripple = 0.15 * abs(math.sin(self._anim_t * 0.73))
-            level  = min(1.0, base + ripple)
+            peak   = min(1.0, base + ripple)
 
-        # Smooth: instant rise, exponential decay (0.75 per 100 ms tick)
-        self._level = max(level, self._level * 0.75)
+        new_d = _to_display(peak)
+        # Instant rise, exponential decay (×0.72 per ~100 ms tick)
+        self._display = max(new_d, self._display * 0.72)
         self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QBrush(QColor('#313244')))
+
+        # Background track
+        p.setBrush(QBrush(QColor('#1e1e2e')))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRoundedRect(0, 2, _BAR_W, _BAR_HEIGHT, 4, 4)
-        fill = int(_BAR_W * self._level)
-        if fill > 0:
-            ratio = self._level
-            if ratio < 0.6:
-                r, g = int(ratio / 0.6 * 180), 220
-            else:
-                r, g = 220, int((1 - (ratio - 0.6) / 0.4) * 220)
-            p.setBrush(QBrush(QColor(r, g, 60)))
-            p.drawRoundedRect(0, 2, fill, _BAR_HEIGHT, 4, 4)
+
+        fill = int(_BAR_W * self._display)
+        if fill <= 0:
+            return
+
+        lv = self._display
+        if lv < 0.35:
+            color = _GRAY
+        elif lv < 0.80:
+            color = _GREEN
+        elif lv < 0.93:
+            color = _YELLOW
+        else:
+            color = _RED
+
+        p.setBrush(QBrush(color))
+        p.drawRoundedRect(0, 2, fill, _BAR_HEIGHT, 4, 4)
 
 
+# ── RecordingIndicator ────────────────────────────────────────────────────────
 class RecordingIndicator(QWidget):
     """Small always-on-top floating window shown during screen recording."""
     pause_clicked = pyqtSignal()
@@ -212,14 +279,14 @@ class RecordingIndicator(QWidget):
 
         self._elapsed = 0
         self._paused  = False
-        self._meter   = _WindowsMicMeter() if sys.platform == 'win32' else None
 
-        self._build_ui()
+        self._build_ui()          # creates self._vu
         self._position_top_right()
+        self._start_meter()       # Windows COM meter OR Linux parec reader
 
         self._clock = QTimer(self)
         self._clock.timeout.connect(self._tick)
-        self._clock.start(100)   # 10 fps
+        self._clock.start(100)    # 10 fps
 
     # ── UI ────────────────────────────────────────────────────────
 
@@ -238,7 +305,6 @@ class RecordingIndicator(QWidget):
         self._dot = QLabel('● GRABANDO')
         self._dot.setObjectName('rec_dot')
         row.addWidget(self._dot)
-
         row.addStretch()
 
         self._time_lbl = QLabel('00:00:00')
@@ -266,12 +332,31 @@ class RecordingIndicator(QWidget):
         screen = QApplication.primaryScreen().availableGeometry()
         self.move(screen.right() - self.width() - 16, screen.top() + 16)
 
+    # ── Meter setup ───────────────────────────────────────────────
+
+    def _start_meter(self):
+        self._win_meter    = None
+        self._linux_reader = None
+
+        if sys.platform == 'win32':
+            self._win_meter = _WindowsMicMeter()
+        else:
+            reader = _LinuxMicReader(self)
+            # Signal is queued to main thread automatically (cross-thread)
+            reader.level_ready.connect(self._vu.set_level)
+            reader.start()
+            self._linux_reader = reader
+
     # ── Slots ─────────────────────────────────────────────────────
 
     def _tick(self):
-        peak = self._meter.peak() if self._meter else -1.0
-        self._vu.set_level(peak)
+        # Windows: poll the COM meter every 100 ms
+        if self._win_meter:
+            self._vu.set_level(self._win_meter.peak())
+        # Linux: VU bar is updated via level_ready signal from _linux_reader.
+        # If no reader started (e.g. parec not installed), show nothing.
 
+        # Clock update (every 10 ticks = 1 s)
         if self._elapsed % 10 == 0 and not self._paused:
             secs = self._elapsed // 10
             h, r = divmod(secs, 3600)
@@ -303,8 +388,13 @@ class RecordingIndicator(QWidget):
             self._dot.setStyleSheet('color: #f38ba8; font-size: 13px; font-weight: bold;')
             self._btn_pause.setText('⏸')
 
+    # ── Cleanup ───────────────────────────────────────────────────
+
     def closeEvent(self, event):
-        if self._meter:
-            self._meter.close()
-            self._meter = None
+        if self._win_meter:
+            self._win_meter.close()
+            self._win_meter = None
+        if self._linux_reader:
+            self._linux_reader.stop()
+            self._linux_reader = None
         super().closeEvent(event)

@@ -7,8 +7,10 @@ from typing import List, Optional
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QComboBox, QCheckBox, QFrame, QSizePolicy, QScrollArea,
+    QComboBox, QCheckBox, QFrame, QSizePolicy, QScrollArea, QSlider,
 )
+
+from core.mic_volume import get_mic_volume, set_mic_volume
 
 from config.settings import Config
 from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available, LOG_PATH
@@ -63,6 +65,18 @@ QLabel#config_val {
 QLabel#config_val:hover { color: #cdd6f4; }
 QFrame#sep { background-color: #313244; }
 QScrollArea { border: none; background: transparent; }
+QSlider#vol_slider::groove:horizontal {
+    height: 6px; background: #313244; border-radius: 3px;
+}
+QSlider#vol_slider::handle:horizontal {
+    background: #89b4fa; border: none;
+    width: 14px; height: 14px; border-radius: 7px; margin: -4px 0;
+}
+QSlider#vol_slider::sub-page:horizontal {
+    background: #89b4fa; border-radius: 3px;
+}
+QSlider#vol_slider:disabled::sub-page:horizontal { background: #45475a; }
+QSlider#vol_slider:disabled::handle:horizontal   { background: #45475a; }
 QScrollBar:vertical { background: #181825; width: 8px; border-radius: 4px; }
 QScrollBar::handle:vertical { background: #45475a; border-radius: 4px; min-height: 24px; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
@@ -213,14 +227,32 @@ class RecorderWindow(QWidget):
         mic_row = QHBoxLayout()
         self._chk_mic = QCheckBox('Activar micrófono')
         self._chk_mic.setChecked(True)
-        self._chk_mic.stateChanged.connect(
-            lambda: self._mic_combo.setEnabled(self._chk_mic.isChecked()))
+        self._chk_mic.stateChanged.connect(self._on_mic_chk_changed)
         mic_row.addWidget(self._chk_mic)
         layout.addLayout(mic_row)
         self._mic_combo = QComboBox()
         self._mic_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._mic_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._mic_combo)
+
+        # ── Mic volume slider ──────────────────────────────────────
+        vol_row = QHBoxLayout()
+        vol_row.setSpacing(8)
+        vol_lbl = QLabel('🎙  Volumen del sistema:')
+        vol_lbl.setStyleSheet('font-size: 12px; color: #a6adc8;')
+        vol_row.addWidget(vol_lbl)
+        self._vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._vol_slider.setObjectName('vol_slider')
+        self._vol_slider.setRange(0, 100)
+        self._vol_slider.setValue(int(get_mic_volume() * 100))
+        self._vol_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        vol_row.addWidget(self._vol_slider)
+        self._vol_pct = QLabel(f'{self._vol_slider.value()}%')
+        self._vol_pct.setFixedWidth(36)
+        self._vol_pct.setStyleSheet('font-size: 12px; color: #89b4fa;')
+        vol_row.addWidget(self._vol_pct)
+        layout.addLayout(vol_row)
+        self._vol_slider.valueChanged.connect(self._on_vol_changed)
 
         layout.addWidget(self._lbl('AUDIO DEL SISTEMA', '11px', '#6c7086'))
         sys_row = QHBoxLayout()
@@ -357,6 +389,15 @@ class RecorderWindow(QWidget):
         else:
             self._summary_box.hide()
             self._config_panel.show()
+
+    def _on_mic_chk_changed(self):
+        enabled = self._chk_mic.isChecked()
+        self._mic_combo.setEnabled(enabled)
+        self._vol_slider.setEnabled(enabled)
+
+    def _on_vol_changed(self, value: int):
+        self._vol_pct.setText(f'{value}%')
+        set_mic_volume(value / 100.0)
 
     def _save_device_config(self):
         screen: Optional[ScreenInfo] = self._screen_combo.currentData()
