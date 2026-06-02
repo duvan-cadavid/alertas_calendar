@@ -55,9 +55,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           $key = $env:GROQ_API_KEY
-          Set-Content -Path core\ai_config.py -Encoding UTF8 -Value @"
-GROQ_API_KEY = "$key"
-"@
+          Set-Content -Path core\ai_config.py -Encoding UTF8 -Value "GROQ_API_KEY = `"$key`""
 
       - name: Build con PyInstaller
         run: pyinstaller build/alertas.spec --noconfirm --clean
