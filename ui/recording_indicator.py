@@ -277,13 +277,14 @@ class RecordingIndicator(QWidget):
         self.setStyleSheet(_STYLE)
         self.setFixedSize(300, 76)
 
-        self._elapsed  = 0
-        self._paused   = False
-        self._drag_pos = QPoint()   # for drag-to-move
+        self._elapsed          = 0
+        self._paused           = False
+        self._drag_pos         = QPoint()
+        self._linux_dry_ticks  = 0   # ticks since last level_ready on Linux
 
-        self._build_ui()                  # creates self._vu
-        self._position_bottom_right()     # 10 % from bottom-right corner
-        self._start_meter()               # Windows COM meter OR Linux parec reader
+        self._build_ui()
+        self._position_bottom_right()
+        self._start_meter()
 
         self._clock = QTimer(self)
         self._clock.timeout.connect(self._tick)
@@ -331,7 +332,7 @@ class RecordingIndicator(QWidget):
 
     def _position_bottom_right(self):
         screen = QApplication.primaryScreen().availableGeometry()
-        margin_x = int(screen.width()  * 0.10)
+        margin_x = int(screen.width()  * 0.02)
         margin_y = int(screen.height() * 0.10)
         x = screen.right()  - self.width()  - margin_x
         y = screen.bottom() - self.height() - margin_y
@@ -359,19 +360,29 @@ class RecordingIndicator(QWidget):
             self._win_meter = _WindowsMicMeter()
         else:
             reader = _LinuxMicReader(self)
-            # Signal is queued to main thread automatically (cross-thread)
-            reader.level_ready.connect(self._vu.set_level)
+            reader.level_ready.connect(self._on_linux_level)
             reader.start()
             self._linux_reader = reader
 
     # ── Slots ─────────────────────────────────────────────────────
 
+    def _on_linux_level(self, level: float):
+        """Receive real audio level from parec reader and reset dry-tick counter."""
+        self._linux_dry_ticks = 0
+        self._vu.set_level(level)
+
     def _tick(self):
-        # Windows: poll the COM meter every 100 ms
         if self._win_meter:
             self._vu.set_level(self._win_meter.peak())
-        # Linux: VU bar is updated via level_ready signal from _linux_reader.
-        # If no reader started (e.g. parec not installed), show nothing.
+        elif self._linux_reader:
+            # If parec hasn't delivered data for >3 ticks (300 ms) — it either
+            # isn't installed or the device failed — fall back to animation so
+            # the bar shows something instead of staying invisible at level 0.
+            self._linux_dry_ticks += 1
+            if self._linux_dry_ticks > 3:
+                self._vu.set_level(-1.0)
+        else:
+            self._vu.set_level(-1.0)
 
         # Clock update (every 10 ticks = 1 s)
         if self._elapsed % 10 == 0 and not self._paused:

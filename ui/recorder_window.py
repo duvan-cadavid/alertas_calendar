@@ -179,6 +179,10 @@ class RecorderWindow(QWidget):
 
         layout.addWidget(_sep())
 
+        # ── Mic volume (always visible) ───────────────────────────
+        layout.addWidget(self._build_volume_row())
+        layout.addWidget(_sep())
+
         # ── Status label ──────────────────────────────────────────
         self._status_lbl = QLabel('')
         self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -234,25 +238,6 @@ class RecorderWindow(QWidget):
         self._mic_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._mic_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self._mic_combo)
-
-        # ── Mic volume slider ──────────────────────────────────────
-        vol_row = QHBoxLayout()
-        vol_row.setSpacing(8)
-        vol_lbl = QLabel('🎙  Volumen del sistema:')
-        vol_lbl.setStyleSheet('font-size: 12px; color: #a6adc8;')
-        vol_row.addWidget(vol_lbl)
-        self._vol_slider = QSlider(Qt.Orientation.Horizontal)
-        self._vol_slider.setObjectName('vol_slider')
-        self._vol_slider.setRange(0, 100)
-        self._vol_slider.setValue(int(get_mic_volume() * 100))
-        self._vol_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        vol_row.addWidget(self._vol_slider)
-        self._vol_pct = QLabel(f'{self._vol_slider.value()}%')
-        self._vol_pct.setFixedWidth(36)
-        self._vol_pct.setStyleSheet('font-size: 12px; color: #89b4fa;')
-        vol_row.addWidget(self._vol_pct)
-        layout.addLayout(vol_row)
-        self._vol_slider.valueChanged.connect(self._on_vol_changed)
 
         layout.addWidget(self._lbl('AUDIO DEL SISTEMA', '11px', '#6c7086'))
         sys_row = QHBoxLayout()
@@ -390,10 +375,36 @@ class RecorderWindow(QWidget):
             self._summary_box.hide()
             self._config_panel.show()
 
+    def _build_volume_row(self) -> QWidget:
+        """Always-visible mic OS volume control."""
+        row = QWidget()
+        row.setStyleSheet(
+            'QWidget { background:#1e1e2e; border-radius:8px; border:1px solid #313244; }')
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
+
+        lbl = QLabel('🎙  Volumen del micrófono (sistema):')
+        lbl.setStyleSheet('font-size: 12px; color: #a6adc8; border: none;')
+        layout.addWidget(lbl)
+
+        self._vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._vol_slider.setObjectName('vol_slider')
+        self._vol_slider.setRange(0, 100)
+        self._vol_slider.setValue(int(get_mic_volume() * 100))
+        self._vol_slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        layout.addWidget(self._vol_slider)
+
+        self._vol_pct = QLabel(f'{self._vol_slider.value()}%')
+        self._vol_pct.setFixedWidth(36)
+        self._vol_pct.setStyleSheet('font-size: 12px; color: #89b4fa; border: none;')
+        layout.addWidget(self._vol_pct)
+
+        self._vol_slider.valueChanged.connect(self._on_vol_changed)
+        return row
+
     def _on_mic_chk_changed(self):
-        enabled = self._chk_mic.isChecked()
-        self._mic_combo.setEnabled(enabled)
-        self._vol_slider.setEnabled(enabled)
+        self._mic_combo.setEnabled(self._chk_mic.isChecked())
 
     def _on_vol_changed(self, value: int):
         self._vol_pct.setText(f'{value}%')
