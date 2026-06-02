@@ -2,7 +2,7 @@ import math
 import subprocess
 import sys
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QBrush
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QApplication
 
@@ -277,12 +277,13 @@ class RecordingIndicator(QWidget):
         self.setStyleSheet(_STYLE)
         self.setFixedSize(300, 76)
 
-        self._elapsed = 0
-        self._paused  = False
+        self._elapsed  = 0
+        self._paused   = False
+        self._drag_pos = QPoint()   # for drag-to-move
 
-        self._build_ui()          # creates self._vu
-        self._position_top_right()
-        self._start_meter()       # Windows COM meter OR Linux parec reader
+        self._build_ui()                  # creates self._vu
+        self._position_bottom_right()     # 10 % from bottom-right corner
+        self._start_meter()               # Windows COM meter OR Linux parec reader
 
         self._clock = QTimer(self)
         self._clock.timeout.connect(self._tick)
@@ -328,9 +329,25 @@ class RecordingIndicator(QWidget):
         self._vu = _VuBar(self)
         root.addWidget(self._vu, alignment=Qt.AlignmentFlag.AlignLeft)
 
-    def _position_top_right(self):
+    def _position_bottom_right(self):
         screen = QApplication.primaryScreen().availableGeometry()
-        self.move(screen.right() - self.width() - 16, screen.top() + 16)
+        margin_x = int(screen.width()  * 0.10)
+        margin_y = int(screen.height() * 0.10)
+        x = screen.right()  - self.width()  - margin_x
+        y = screen.bottom() - self.height() - margin_y
+        self.move(x, y)
+
+    # ── Drag to move ──────────────────────────────────────────────
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if event.buttons() & Qt.MouseButton.LeftButton and not self._drag_pos.isNull():
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
 
     # ── Meter setup ───────────────────────────────────────────────
 

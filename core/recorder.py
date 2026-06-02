@@ -377,11 +377,16 @@ class _SegmentThread(QThread):
 
     def run(self):
         try:
+            kwargs = {}
+            if sys.platform == 'win32':
+                # Prevent FFmpeg from opening a visible console window
+                kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
             self._proc = subprocess.Popen(
                 self._cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
+                **kwargs,
             )
 
             # Read stderr in a background thread to prevent pipe-buffer
@@ -475,7 +480,8 @@ class _ConcatThread(QThread):
                     '-c', 'copy', '-movflags', '+faststart',
                     self._output,
                 ]
-            r = subprocess.run(cmd, capture_output=True, timeout=600)
+            extra = {'creationflags': subprocess.CREATE_NO_WINDOW} if sys.platform == 'win32' else {}
+            r = subprocess.run(cmd, capture_output=True, timeout=600, **extra)
             if r.returncode != 0:
                 raise RuntimeError(r.stderr.decode(errors='replace')[-400:])
             self.done.emit(self._output)
