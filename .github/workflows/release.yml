@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versión del instalador (ej: 1.1.0)'
+        description: 'Versión del instalador (ej: 1.3.0)'
         required: true
-        default: '1.1.0'
+        default: '1.3.0'
 
 permissions:
   contents: write
@@ -52,6 +52,34 @@ jobs:
       - name: Build con PyInstaller
         run: pyinstaller build/alertas.spec --noconfirm --clean
 
+      - name: Descargar FFmpeg para bundlear en instalador
+        shell: powershell
+        run: |
+          $zip  = "$env:TEMP\ffmpeg.zip"
+          $dest = "$env:TEMP\ffmpeg-extract"
+          $url  = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+          Write-Host "Descargando FFmpeg desde $url ..."
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+
+          Write-Host "Extrayendo..."
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+
+          # Buscar ffmpeg.exe dentro de la carpeta bin/ extraída
+          $ffmpegExe = Get-ChildItem -Path $dest -Recurse -Filter "ffmpeg.exe" |
+                       Where-Object { $_.DirectoryName -match "\\bin$" } |
+                       Select-Object -First 1
+
+          if (-not $ffmpegExe) {
+            Write-Error "ffmpeg.exe no encontrado en el zip descargado"
+            exit 1
+          }
+
+          New-Item -ItemType Directory -Force -Path "build\bin" | Out-Null
+          Copy-Item $ffmpegExe.FullName "build\bin\ffmpeg.exe"
+          $size = [math]::Round((Get-Item "build\bin\ffmpeg.exe").Length / 1MB, 1)
+          Write-Host "FFmpeg copiado a build\bin\ffmpeg.exe ($size MB)"
+
       - name: Instalar Inno Setup
         run: choco install innosetup --no-progress -y
 
@@ -85,22 +113,20 @@ jobs:
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}
 
-            - **Grabación de pantalla** — graba cualquier monitor con soporte de pausa y reanudación
-            - **Audio mezclado** — captura micrófono y audio del sistema simultáneamente
-            - **Transcripción automática en español** — powered by Whisper (faster-whisper)
-            - **Carpeta configurable** — define dónde se guardan las grabaciones desde Configuración
+            - **FFmpeg incluido** — ya no se necesita instalar FFmpeg manualmente; el instalador lo bundlea y configura el PATH automáticamente
+            - **Grabación de pantalla** — indicador flotante "GRABANDO" con barra de micrófono animada
+            - **Configuración persistente** — pantalla y dispositivos de audio se recuerdan entre sesiones
+            - **Ventana de resultados** — al finalizar abre transcripción y resumen en una sola pantalla
+            - **Transcripción y resumen IA** — Groq Whisper + Llama 3.3 (requiere API key gratuita)
 
             ## Descarga e instalación
 
             1. Descarga `Alertas_de_Calendarios_Setup.exe`
-            2. Ejecuta el instalador y sigue el asistente
-            3. La app se inicia en la bandeja del sistema (system tray)
+            2. Ejecuta el instalador (requiere permisos de administrador)
+            3. FFmpeg se instala y configura automáticamente
+            4. La app se inicia en la bandeja del sistema (system tray)
 
-            ## Requisitos del sistema
+            ## Requisitos
 
             - Windows 10 o superior (64-bit)
-            - **FFmpeg** instalado y en el PATH del sistema — necesario para grabar pantalla
-              → Descarga: https://ffmpeg.org/download.html
-            - La primera transcripción descarga el modelo Whisper (~1.5 GB, se guarda en caché)
-
-            **Requisitos:** Windows 10 o superior (64-bit)
+            - Conexión a internet para transcripción (API key gratuita en console.groq.com)
