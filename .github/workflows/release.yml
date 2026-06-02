@@ -113,11 +113,10 @@ jobs:
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}
 
+            - **Fix: FFmpeg bundled detectado correctamente** — la app ahora busca `ffmpeg.exe` en su propia carpeta `bin\` antes de recurrir al PATH del sistema, resolviendo el error "Instala FFmpeg" que aparecía al lanzar la app desde el instalador
+            - **Fix: detección de micrófonos** — logging detallado de WASAPI/dshow para diagnosticar dispositivos no detectados
+            - **Log de diagnóstico** — botón "📋 Ver log de diagnóstico" en la ventana de grabación; el log se guarda en `%USERPROFILE%\.alertas_calendario\recorder.log`
             - **FFmpeg incluido** — ya no se necesita instalar FFmpeg manualmente; el instalador lo bundlea y configura el PATH automáticamente
-            - **Grabación de pantalla** — indicador flotante "GRABANDO" con barra de micrófono animada
-            - **Configuración persistente** — pantalla y dispositivos de audio se recuerdan entre sesiones
-            - **Ventana de resultados** — al finalizar abre transcripción y resumen en una sola pantalla
-            - **Transcripción y resumen IA** — Groq Whisper + Llama 3.3 (requiere API key gratuita)
 
             ## Descarga e instalación
 

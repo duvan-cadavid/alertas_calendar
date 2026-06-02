@@ -1,13 +1,30 @@
+import logging
 import os
 import sys
 import shutil
 import subprocess
 import tempfile
 import threading
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import QApplication
+
+# ── Recorder logger ────────────────────────────────────────────────────────────
+LOG_PATH = Path.home() / '.alertas_calendario' / 'recorder.log'
+
+def _setup_logger() -> logging.Logger:
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger('recorder')
+    if not logger.handlers:
+        logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler(LOG_PATH, encoding='utf-8')
+        fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        logger.addHandler(fh)
+    return logger
+
+_log = _setup_logger()
 
 
 class ScreenInfo:
@@ -166,9 +183,24 @@ def _win32_monitor_positions(qt_screens: list) -> dict:
     return out
 
 
+def _get_ffmpeg_exe() -> str:
+    """Return the ffmpeg executable, preferring the bundled copy on Windows.
+
+    The Windows installer places ffmpeg.exe in {app}\\bin\\ and adds that
+    directory to the system PATH — but the PATH update doesn't propagate to
+    the installer's own child processes (the app itself when launched by the
+    installer).  Checking the bundled path first avoids that race.
+    """
+    if sys.platform == 'win32':
+        bundled = os.path.join(os.path.dirname(sys.executable), 'bin', 'ffmpeg.exe')
+        if os.path.isfile(bundled):
+            return bundled
+    return 'ffmpeg'
+
+
 def ffmpeg_available() -> bool:
     try:
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
+        subprocess.run([_get_ffmpeg_exe(), '-version'], capture_output=True, timeout=5)
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         return False
@@ -197,13 +229,22 @@ def _windows_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
     mics: List[AudioDevice] = []
     sys_devs: List[AudioDevice] = []
 
+    ffmpeg = _get_ffmpeg_exe()
+    _log.info('=== _windows_devices() start ===')
+    _log.info('ffmpeg exe: %s', ffmpeg)
+
     # ── Try WASAPI first ──────────────────────────────────────────
     try:
+        wasapi_cmd = [ffmpeg, '-f', 'wasapi', '-list_devices', 'true', '-i', 'dummy']
+        _log.info('WASAPI cmd: %s', wasapi_cmd)
         r = subprocess.run(
-            ['ffmpeg', '-f', 'wasapi', '-list_devices', 'true', '-i', 'dummy'],
+            wasapi_cmd,
             capture_output=True, text=True, timeout=10,
             encoding='utf-8', errors='replace',
         )
+        _log.info('WASAPI returncode: %d', r.returncode)
+        _log.info('WASAPI stderr:\n%s', r.stderr)
+
         in_input    = False
         in_loopback = False
         for line in r.stderr.splitlines():
@@ -219,22 +260,32 @@ def _windows_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
             if not name or name.startswith('@'):
                 continue
             if in_input:
+                _log.info('WASAPI mic found: %r', name)
                 mics.append((name, f'🎙 {name}'))
             elif in_loopback:
+                _log.info('WASAPI loopback found: %r', name)
                 sys_devs.append((name, f'🔊 {name} (loopback)'))
 
+        _log.info('WASAPI result — mics: %d, sys: %d', len(mics), len(sys_devs))
         if mics or sys_devs:
+            _log.info('Using WASAPI devices')
             return mics, sys_devs
-    except Exception:
-        pass
+        _log.warning('WASAPI returned no devices — falling back to dshow')
+    except Exception as exc:
+        _log.exception('WASAPI enumeration failed: %s', exc)
 
     # ── Fallback: DirectShow ──────────────────────────────────────
     try:
+        dshow_cmd = [ffmpeg, '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy']
+        _log.info('dshow cmd: %s', dshow_cmd)
         r = subprocess.run(
-            ['ffmpeg', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'],
+            dshow_cmd,
             capture_output=True, text=True, timeout=10,
             encoding='utf-8', errors='replace',
         )
+        _log.info('dshow returncode: %d', r.returncode)
+        _log.info('dshow stderr:\n%s', r.stderr)
+
         in_audio = False
         for line in r.stderr.splitlines():
             low = line.lower()
@@ -252,12 +303,16 @@ def _windows_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
                 continue
             keywords = ('mix', 'stereo', 'loopback', 'what u hear', 'wave out')
             if any(k in name.lower() for k in keywords):
+                _log.info('dshow sys audio found: %r', name)
                 sys_devs.append((name, f'🔊 {name}'))
             else:
+                _log.info('dshow mic found: %r', name)
                 mics.append((name, f'🎙 {name}'))
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.exception('dshow enumeration failed: %s', exc)
 
+    _log.info('dshow result — mics: %d, sys: %d', len(mics), len(sys_devs))
+    _log.info('=== _windows_devices() end ===')
     return mics, sys_devs
 
 
@@ -368,6 +423,12 @@ class _SegmentThread(QThread):
             reader.join(timeout=3)
             stderr_bytes = b''.join(buf)
             rc = self._proc.returncode
+            stderr_text = stderr_bytes.decode(errors='replace').strip()
+
+            _log.info('FFmpeg segment finished — rc=%d stopping=%s file_ok=%s',
+                      rc, self._stopping,
+                      os.path.exists(self._output) and os.path.getsize(self._output) > 0)
+            _log.info('FFmpeg stderr:\n%s', stderr_text)
 
             # 0 = natural end, 255 = received 'q', negative = killed
             normal_exit = rc in (0, 255) or self._stopping
@@ -376,10 +437,10 @@ class _SegmentThread(QThread):
             if file_ok and normal_exit:
                 self.done.emit(self._output)
             elif not file_ok:
-                msg = stderr_bytes.decode(errors='replace').strip()
                 self.error.emit('FFmpeg no pudo iniciar la grabación:\n\n'
-                                + _ffmpeg_error(msg))
+                                + _ffmpeg_error(stderr_text))
         except FileNotFoundError:
+            _log.error('ffmpeg not found: %s', self._cmd[0])
             self.error.emit(
                 'FFmpeg no está instalado o no está en el PATH.\n'
                 'Descárgalo desde https://ffmpeg.org/download.html'
@@ -421,7 +482,7 @@ class _ConcatThread(QThread):
                 # Re-mux with faststart so the moov atom is at the front.
                 # shutil.copy2 would preserve a potentially unplayable file.
                 cmd = [
-                    'ffmpeg', '-y', '-i', self._segments[0],
+                    _get_ffmpeg_exe(), '-y', '-i', self._segments[0],
                     '-c', 'copy', '-movflags', '+faststart',
                     self._output,
                 ]
@@ -431,7 +492,7 @@ class _ConcatThread(QThread):
                     for seg in self._segments:
                         f.write(f"file '{seg}'\n")
                 cmd = [
-                    'ffmpeg', '-y',
+                    _get_ffmpeg_exe(), '-y',
                     '-f', 'concat', '-safe', '0', '-i', list_path,
                     '-c', 'copy', '-movflags', '+faststart',
                     self._output,
@@ -560,7 +621,7 @@ class ScreenRecorder(QObject):
 
     def _build_cmd(self, output: str) -> List[str]:
         s = self._screen
-        cmd = ['ffmpeg', '-y']
+        cmd = [_get_ffmpeg_exe(), '-y']
 
         if sys.platform == 'win32':
             cmd += [
@@ -624,4 +685,7 @@ class ScreenRecorder(QObject):
             cmd += ['-an']
 
         cmd.append(output)
+        _log.info('=== _build_cmd ===')
+        _log.info('mic=%r  sys_audio=%r', self._mic, self._sys)
+        _log.info('cmd: %s', ' '.join(cmd))
         return cmd

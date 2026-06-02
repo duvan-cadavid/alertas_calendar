@@ -1,4 +1,5 @@
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -10,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.settings import Config
-from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available
+from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available, LOG_PATH
 from core.transcriber import TranscriberThread
 from core.summarizer import SummarizerThread
 
@@ -181,6 +182,15 @@ class RecorderWindow(QWidget):
         self._btn_start.clicked.connect(self._on_start_clicked)
         btn_box.addWidget(self._btn_start)
         layout.addLayout(btn_box)
+
+        # ── Diagnostics link ──────────────────────────────────────
+        diag_row = QHBoxLayout()
+        diag_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._btn_log = QPushButton('📋  Ver log de diagnóstico')
+        self._btn_log.setObjectName('btn_config')
+        self._btn_log.clicked.connect(self._open_log)
+        diag_row.addWidget(self._btn_log)
+        layout.addLayout(diag_row)
 
         layout.addStretch()
         scroll.setWidget(container)
@@ -527,3 +537,13 @@ class RecorderWindow(QWidget):
             self._sum_text or 'Generando resumen…',
         )
         self._results_win.show()
+
+    def _open_log(self):
+        import subprocess as _sp
+        if not LOG_PATH.exists():
+            self._set_status(f'Log aún no existe: {LOG_PATH}', '#fb923c')
+            return
+        if sys.platform == 'win32':
+            _sp.Popen(['explorer', '/select,', str(LOG_PATH)])
+        else:
+            _sp.Popen(['xdg-open', str(LOG_PATH.parent)])

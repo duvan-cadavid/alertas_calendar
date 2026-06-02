@@ -1,8 +1,10 @@
 import os
 import subprocess
+import sys
 import tempfile
 
 from PyQt6.QtCore import QThread, pyqtSignal
+from core.recorder import _get_ffmpeg_exe
 
 
 class TranscriberThread(QThread):
@@ -44,7 +46,7 @@ class TranscriberThread(QThread):
             tmp.close()
 
             r = subprocess.run(
-                ['ffmpeg', '-y', '-i', self._path,
+                [_get_ffmpeg_exe(), '-y', '-i', self._path,
                  '-vn', '-acodec', 'libmp3lame', '-ab', '32k', '-ar', '16000',
                  tmp_audio],
                 capture_output=True, timeout=120,
