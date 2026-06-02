@@ -180,15 +180,55 @@ AudioDevice = Tuple[str, str]   # (ffmpeg_device_id, display_name)
 def get_audio_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
     """Returns (mic_list, system_audio_list) — each item is (device_id, display_name)."""
     if sys.platform == 'win32':
-        return _dshow_devices()
+        return _windows_devices()
     return _pulse_devices()
 
 
-def _dshow_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
-    """Enumerate DirectShow audio devices on Windows via FFmpeg."""
+def _windows_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
+    """Enumerate audio devices on Windows using WASAPI (primary) + dshow (fallback).
+
+    WASAPI is preferred because:
+    - Lists all microphones reliably on Win10/Win11
+    - Provides loopback devices for system audio capture without needing
+      'Stereo Mix' (which is disabled by default on modern Windows)
+    - Works even when DirectShow enumeration fails due to privacy settings
+    """
     import re
     mics: List[AudioDevice] = []
     sys_devs: List[AudioDevice] = []
+
+    # ── Try WASAPI first ──────────────────────────────────────────
+    try:
+        r = subprocess.run(
+            ['ffmpeg', '-f', 'wasapi', '-list_devices', 'true', '-i', 'dummy'],
+            capture_output=True, text=True, timeout=10,
+            encoding='utf-8', errors='replace',
+        )
+        in_input    = False
+        in_loopback = False
+        for line in r.stderr.splitlines():
+            low = line.lower()
+            if 'wasapi input' in low:
+                in_input = True;    in_loopback = False;  continue
+            if 'wasapi loopback' in low:
+                in_loopback = True; in_input = False;     continue
+            m = re.search(r'"([^"]+)"', line)
+            if not m:
+                continue
+            name = m.group(1).strip()
+            if not name or name.startswith('@'):
+                continue
+            if in_input:
+                mics.append((name, f'🎙 {name}'))
+            elif in_loopback:
+                sys_devs.append((name, f'🔊 {name} (loopback)'))
+
+        if mics or sys_devs:
+            return mics, sys_devs
+    except Exception:
+        pass
+
+    # ── Fallback: DirectShow ──────────────────────────────────────
     try:
         r = subprocess.run(
             ['ffmpeg', '-list_devices', 'true', '-f', 'dshow', '-i', 'dummy'],
@@ -198,17 +238,11 @@ def _dshow_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
         in_audio = False
         for line in r.stderr.splitlines():
             low = line.lower()
-            # FFmpeg prints section headers like: "DirectShow audio devices"
             if 'directshow audio' in low:
-                in_audio = True
-                continue
+                in_audio = True;  continue
             if 'directshow video' in low:
-                in_audio = False
-                continue
-            if not in_audio:
-                continue
-            # Skip "Alternative name" lines (@device_cm_... / @device_pnp_...)
-            if 'alternative name' in low:
+                in_audio = False; continue
+            if not in_audio or 'alternative name' in low:
                 continue
             m = re.search(r'"([^"@][^"]*)"', line)
             if not m:
@@ -218,11 +252,12 @@ def _dshow_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
                 continue
             keywords = ('mix', 'stereo', 'loopback', 'what u hear', 'wave out')
             if any(k in name.lower() for k in keywords):
-                sys_devs.append((name, name))
+                sys_devs.append((name, f'🔊 {name}'))
             else:
-                mics.append((name, name))
+                mics.append((name, f'🎙 {name}'))
     except Exception:
         pass
+
     return mics, sys_devs
 
 
@@ -546,13 +581,15 @@ class ScreenRecorder(QObject):
         audio_n = 0
         if self._mic:
             if sys.platform == 'win32':
-                cmd += ['-f', 'dshow', '-i', f'audio={self._mic}']
+                # WASAPI input — works on all Win10/11 without extra config
+                cmd += ['-f', 'wasapi', '-i', f'audio={self._mic}']
             else:
                 cmd += ['-f', 'pulse', '-i', self._mic]
             audio_n += 1
         if self._sys:
             if sys.platform == 'win32':
-                cmd += ['-f', 'dshow', '-i', f'audio={self._sys}']
+                # WASAPI loopback — captures speaker output without Stereo Mix
+                cmd += ['-f', 'wasapi', '-loopback', '1', '-i', f'audio={self._sys}']
             else:
                 cmd += ['-f', 'pulse', '-i', self._sys]
             audio_n += 1
