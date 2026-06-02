@@ -4,7 +4,11 @@ import sys
 
 from PyQt6.QtCore import Qt, QTimer, QThread, QPoint, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QBrush
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QApplication
+from PyQt6.QtWidgets import (
+    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton, QApplication, QSlider,
+)
+
+from core.mic_volume import get_mic_volume, set_mic_volume
 
 # ── Windows: IAudioMeterInformation peak reader ───────────────────────────────
 if sys.platform == 'win32':
@@ -181,6 +185,14 @@ QPushButton#btn_pause {
     font-size: 12px; padding: 4px 10px;
 }
 QPushButton#btn_pause:hover { background-color: #45475a; }
+QSlider#vol::groove:horizontal {
+    height: 4px; background: #313244; border-radius: 2px;
+}
+QSlider#vol::handle:horizontal {
+    background: #89b4fa; width: 12px; height: 12px;
+    border-radius: 6px; margin: -4px 0; border: none;
+}
+QSlider#vol::sub-page:horizontal { background: #89b4fa; border-radius: 2px; }
 """
 
 _BAR_HEIGHT = 8
@@ -275,7 +287,7 @@ class RecordingIndicator(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet(_STYLE)
-        self.setFixedSize(300, 76)
+        self.setFixedSize(300, 110)
 
         self._elapsed          = 0
         self._paused           = False
@@ -295,7 +307,7 @@ class RecordingIndicator(QWidget):
     def _build_ui(self):
         container = QWidget(self)
         container.setObjectName('indicator')
-        container.setGeometry(0, 0, 300, 76)
+        container.setGeometry(0, 0, 300, 110)
 
         root = QVBoxLayout(container)
         root.setContentsMargins(12, 8, 12, 8)
@@ -329,6 +341,31 @@ class RecordingIndicator(QWidget):
 
         self._vu = _VuBar(self)
         root.addWidget(self._vu, alignment=Qt.AlignmentFlag.AlignLeft)
+
+        # ── Mic volume row ────────────────────────────────────────
+        vol_row = QHBoxLayout()
+        vol_row.setSpacing(6)
+
+        mic_lbl = QLabel('🎙')
+        mic_lbl.setStyleSheet('font-size: 12px;')
+        mic_lbl.setFixedWidth(18)
+        vol_row.addWidget(mic_lbl)
+
+        self._vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self._vol_slider.setObjectName('vol')
+        self._vol_slider.setRange(0, 100)
+        self._vol_slider.setValue(int(get_mic_volume() * 100))
+        self._vol_slider.setCursor(Qt.CursorShape.PointingHandCursor)
+        vol_row.addWidget(self._vol_slider)
+
+        self._vol_pct = QLabel(f'{self._vol_slider.value()}%')
+        self._vol_pct.setFixedWidth(30)
+        self._vol_pct.setStyleSheet('font-size: 11px; color: #89b4fa;')
+        self._vol_pct.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        vol_row.addWidget(self._vol_pct)
+
+        root.addLayout(vol_row)
+        self._vol_slider.valueChanged.connect(self._on_vol_changed)
 
     def _position_bottom_right(self):
         screen = QApplication.primaryScreen().availableGeometry()
@@ -392,6 +429,10 @@ class RecordingIndicator(QWidget):
             self._time_lbl.setText(f'{h:02d}:{m:02d}:{s:02d}')
         if not self._paused:
             self._elapsed += 1
+
+    def _on_vol_changed(self, value: int):
+        self._vol_pct.setText(f'{value}%')
+        set_mic_volume(value / 100.0)
 
     def _on_pause(self):
         self._paused = not self._paused
