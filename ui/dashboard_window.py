@@ -3,8 +3,8 @@ import sys
 from datetime import datetime, date, timedelta
 from typing import List
 
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QPixmap
+from PyQt6.QtCore import Qt, QTimer, QThread, QUrl, pyqtSignal
+from PyQt6.QtGui import QDesktopServices, QPixmap
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QGridLayout, QFrame, QSizePolicy, QApplication,
@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 
 from api.client import Appointment, GoujanaClient
 from config.settings import Config
+from core.meeting_links import extract_meeting_url
 from core.downloader import InstallerDownloader, launch_installer
 from core.updater import UpdateChecker
 from core.version import __version__
@@ -212,6 +213,21 @@ class AppointmentCard(QFrame):
             layout.addWidget(obs)
 
         btn_row = QHBoxLayout()
+
+        meeting_url = extract_meeting_url(appt.text, appt.observations)
+        if meeting_url:
+            join_btn = QPushButton("🔗  Conectarse")
+            join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            join_btn.setStyleSheet(
+                "QPushButton { background-color: #1565C0; color: #fff; border: none; "
+                "border-radius: 6px; font-size: 11px; font-weight: bold; padding: 5px 12px; } "
+                "QPushButton:hover { background-color: #1976D2; } "
+                "QPushButton:pressed { background-color: #0D47A1; }"
+            )
+            join_btn.clicked.connect(
+                lambda checked, u=meeting_url: QDesktopServices.openUrl(QUrl(u)))
+            btn_row.addWidget(join_btn)
+
         btn_row.addStretch()
         self._confirm_btn = QPushButton()
         self._confirm_btn.setCursor(Qt.CursorShape.PointingHandCursor)

@@ -1,8 +1,9 @@
-from PyQt6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve, QPoint, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QLinearGradient, QBrush
+from PyQt6.QtCore import Qt, QTimer, QUrl, QPropertyAnimation, QEasingCurve, QPoint, pyqtSignal
+from PyQt6.QtGui import QColor, QDesktopServices, QPainter, QLinearGradient, QBrush
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QApplication
 
 from api.client import Appointment
+from core.meeting_links import extract_meeting_url
 
 _STYLE = """
     QLabel#mini_title {
@@ -27,6 +28,12 @@ _STYLE = """
         border: none; border-radius: 6px;
         font-size: 12px; padding: 5px 12px;
     }
+    QPushButton#mini_join {
+        background-color: #1565C0; color: #FFFFFF;
+        border: none; border-radius: 6px;
+        font-size: 12px; font-weight: bold; padding: 5px 12px;
+    }
+    QPushButton#mini_join:hover { background-color: #1976D2; }
 """
 
 def _fmt(dt) -> str:
@@ -44,6 +51,9 @@ class MiniAlert(QWidget):
     def __init__(self, appointment: Appointment, minutes_left: int):
         super().__init__()
         self._appointment = appointment
+        self._meeting_url = extract_meeting_url(appointment.text, appointment.observations)
+        if self._meeting_url:
+            self.HEIGHT = 185
         self._setup_window()
         self._build_ui(minutes_left)
         self._animate_in()
@@ -108,6 +118,15 @@ class MiniAlert(QWidget):
             info = _sel(QLabel(f"👤  {self._appointment.customer_name}"))
             info.setObjectName('mini_info')
             root.addWidget(info)
+
+        # Botón unirse a la reunión (solo si hay link)
+        if self._meeting_url:
+            join_btn = QPushButton("🔗  Unirse a la reunión")
+            join_btn.setObjectName('mini_join')
+            join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            join_btn.clicked.connect(
+                lambda checked, u=self._meeting_url: QDesktopServices.openUrl(QUrl(u)))
+            root.addWidget(join_btn)
 
         # Botón confirmar asistencia
         self._confirm_btn = QPushButton("✓  Confirmar asistencia")

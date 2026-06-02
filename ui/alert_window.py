@@ -1,14 +1,14 @@
 from datetime import datetime
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QPainter, QLinearGradient, QBrush
+from PyQt6.QtCore import Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtGui import QColor, QDesktopServices, QPainter, QLinearGradient, QBrush
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QFrame, QApplication, QTextEdit,
 )
 
-
 from api.client import Appointment
+from core.meeting_links import extract_meeting_url
 
 
 def _fmt_time(dt: datetime) -> str:
@@ -65,6 +65,14 @@ _MAIN_STYLE = """
     }
     QPushButton#cancel_task:hover   { background-color: #E53935; }
     QPushButton#cancel_task:pressed { background-color: #7F0000; }
+
+    QPushButton#join_meeting {
+        background-color: #1565C0; color: #FFFFFF;
+        border: none; border-radius: 10px;
+        font-size: 16px; font-weight: bold; padding: 18px 36px;
+    }
+    QPushButton#join_meeting:hover   { background-color: #1976D2; }
+    QPushButton#join_meeting:pressed { background-color: #0D47A1; }
 """
 
 _OVERLAY_STYLE = """
@@ -347,6 +355,16 @@ class AlertWindow(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(20)
         btn_row.addStretch()
+
+        meeting_url = extract_meeting_url(self.appointment.text, self.appointment.observations)
+        if meeting_url:
+            join_btn = QPushButton("🔗   UNIRSE A LA REUNIÓN")
+            join_btn.setObjectName("join_meeting")
+            join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            join_btn.setMinimumHeight(64)
+            join_btn.clicked.connect(
+                lambda checked, u=meeting_url: QDesktopServices.openUrl(QUrl(u)))
+            btn_row.addWidget(join_btn)
 
         snooze_btn = QPushButton(f"⏸   POSPONER {SNOOZE_MINUTES} MINUTOS")
         snooze_btn.setObjectName("snooze")
