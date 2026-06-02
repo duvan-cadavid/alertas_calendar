@@ -113,10 +113,10 @@ jobs:
           body: |
             ## Novedades v${{ steps.ver.outputs.VERSION }}
 
-            - **Fix: FFmpeg bundled detectado correctamente** — la app ahora busca `ffmpeg.exe` en su propia carpeta `bin\` antes de recurrir al PATH del sistema, resolviendo el error "Instala FFmpeg" que aparecía al lanzar la app desde el instalador
-            - **Fix: detección de micrófonos** — logging detallado de WASAPI/dshow para diagnosticar dispositivos no detectados
-            - **Log de diagnóstico** — botón "📋 Ver log de diagnóstico" en la ventana de grabación; el log se guarda en `%USERPROFILE%\.alertas_calendario\recorder.log`
-            - **FFmpeg incluido** — ya no se necesita instalar FFmpeg manualmente; el instalador lo bundlea y configura el PATH automáticamente
+            - **Fix: micrófonos detectados correctamente** — el parser de dispositivos de audio ahora entiende el nuevo formato de FFmpeg 8.x (`"Nombre" (audio)` en una sola línea), resolviendo la detección de 0 micrófonos en versiones anteriores
+            - **Fix: audio capturado con dshow** — el build "essentials" de FFmpeg no incluye WASAPI; el grabador ahora usa DirectShow tanto para enumerar como para capturar audio
+            - **Fix: FFmpeg bundled detectado correctamente** — la app busca `ffmpeg.exe` en `bin\` antes de recurrir al PATH del sistema
+            - **Log de diagnóstico** — botón "📋 Ver log de diagnóstico" en la ventana de grabación (`%USERPROFILE%\.alertas_calendario\recorder.log`)
 
             ## Descarga e instalación
 
