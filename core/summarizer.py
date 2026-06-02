@@ -50,6 +50,9 @@ class SummarizerThread(QThread):
             )
             self.done.emit(resp.choices[0].message.content.strip())
         except ImportError:
-            self.error.emit('groq no instalado.')
+            self.error.emit(
+                'El módulo de resumen no está disponible.\n'
+                'Reinicia la aplicación para instalar las dependencias automáticamente.'
+            )
         except Exception as e:
             self.error.emit(str(e))

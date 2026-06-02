@@ -65,7 +65,10 @@ class TranscriberThread(QThread):
             self.done.emit('\n'.join(lines))
 
         except ImportError:
-            self.error.emit('groq no instalado. Ejecuta: pip install groq')
+            self.error.emit(
+                'El módulo de transcripción no está disponible.\n'
+                'Reinicia la aplicación para instalar las dependencias automáticamente.'
+            )
         except Exception as e:
             self.error.emit(str(e))
         finally:

@@ -1,10 +1,11 @@
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 
 def _app_icon() -> QIcon:
@@ -34,6 +35,68 @@ def _cleanup_pid() -> None:
     PID_FILE.unlink(missing_ok=True)
 
 
+_REQUIRED = [
+    ('groq',    'groq>=0.11.0'),
+    ('httpx',   'httpx'),
+]
+
+
+def _ensure_dependencies(app: QApplication) -> None:
+    """Install any missing runtime dependencies automatically.
+
+    In a PyInstaller bundle all packages are already embedded — a missing
+    import there indicates a build problem and we just show an error.
+    In source-mode (development / Linux direct run) we install via pip.
+    """
+    missing = []
+    for module, package in _REQUIRED:
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(package)
+
+    if not missing:
+        return
+
+    is_bundle = getattr(sys, 'frozen', False)
+
+    if is_bundle:
+        QMessageBox.critical(
+            None,
+            'Dependencias faltantes',
+            'Faltan componentes en la instalación:\n\n'
+            + '\n'.join(missing)
+            + '\n\nPor favor descarga e instala la versión más reciente '
+              'desde GitHub Releases.',
+        )
+        return
+
+    # Running from source — install silently via pip
+    msg = QMessageBox(
+        QMessageBox.Icon.Information, 'Instalando dependencias',
+        'Faltan paquetes necesarios. Instalando automáticamente…\n\n'
+        + '\n'.join(missing),
+    )
+    msg.setStandardButtons(QMessageBox.StandardButton.NoButton)
+    msg.show()
+    app.processEvents()
+
+    result = subprocess.run(
+        [sys.executable, '-m', 'pip', 'install', '--quiet'] + missing,
+        capture_output=True,
+    )
+    msg.close()
+
+    if result.returncode != 0:
+        QMessageBox.warning(
+            None, 'Error al instalar',
+            'No se pudieron instalar las dependencias automáticamente.\n\n'
+            'Ejecuta manualmente:\n'
+            f'  pip install {" ".join(missing)}\n\n'
+            + result.stderr.decode(errors='replace')[:300],
+        )
+
+
 def main():
     _check_single_instance()
     _write_pid()
@@ -43,6 +106,7 @@ def main():
     app.setApplicationDisplayName("Alertas de Calendarios — Sofisis")
     app.setWindowIcon(_app_icon())
     app.setQuitOnLastWindowClosed(False)
+    _ensure_dependencies(app)
 
     # Permitir cierre limpio via señal (Linux) o CTRL+C
     def _on_sigterm(*_):
