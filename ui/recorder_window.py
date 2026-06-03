@@ -18,6 +18,125 @@ from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_dev
 from core.transcriber import TranscriberThread
 from core.summarizer import SummarizerThread
 
+
+class ScreenThumbnailSelector(QWidget):
+    """Clickable screenshot cards for selecting which screen to record.
+
+    Shows a live screenshot of every connected monitor side by side.
+    The user clicks the image that matches the screen they want to capture.
+    Works at any resolution or DPI; uses a horizontal scroll for 3+ screens.
+    """
+
+    _TW = 240   # thumbnail width  (logical px)
+    _TH = 135   # thumbnail height (16 : 9)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._screens:  List[ScreenInfo] = []
+        self._cards:    list = []     # list of (QLabel thumb, bool has_pixmap)
+        self._selected  = 0
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._scroll.setStyleSheet(
+            'QScrollArea { border:none; background:transparent; }'
+            'QScrollBar:horizontal { background:#181825; height:6px; border-radius:3px; }'
+            'QScrollBar::handle:horizontal { background:#45475a; border-radius:3px; min-width:20px; }'
+            'QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width:0; }'
+        )
+        self._scroll.setFixedHeight(self._TH + 42)   # thumb + label + spacing
+
+        self._inner = QWidget()
+        self._row   = QHBoxLayout(self._inner)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(12)
+        self._row.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+
+        self._scroll.setWidget(self._inner)
+        outer.addWidget(self._scroll)
+
+    # ── Public ────────────────────────────────────────────────────
+
+    def load(self, screens: List[ScreenInfo], selected_name: str = '') -> None:
+        """(Re)populate cards with fresh screenshots and restore selection."""
+        self._screens = screens
+        self._cards.clear()
+
+        while self._row.count():
+            item = self._row.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        qt_screens = QApplication.screens()
+        for idx, info in enumerate(screens):
+            self._row.addWidget(self._make_card(idx, info, qt_screens))
+
+        sel = next((i for i, s in enumerate(screens) if s.name == selected_name), 0)
+        self._apply(sel)
+
+    def selected_screen(self) -> Optional[ScreenInfo]:
+        if self._selected < len(self._screens):
+            return self._screens[self._selected]
+        return self._screens[0] if self._screens else None
+
+    def selected_label(self) -> str:
+        s = self.selected_screen()
+        return f'Pantalla {self._selected + 1}  ({s.width}×{s.height})' if s else '—'
+
+    # ── Internal ──────────────────────────────────────────────────
+
+    def _make_card(self, idx: int, info: ScreenInfo, qt_screens: list) -> QWidget:
+        card = QWidget()
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setSpacing(5)
+
+        thumb = QLabel()
+        thumb.setFixedSize(self._TW, self._TH)
+        thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        has_px = False
+        if idx < len(qt_screens):
+            px = qt_screens[idx].grabWindow(0)
+            if not px.isNull():
+                thumb.setPixmap(
+                    px.scaled(self._TW - 4, self._TH - 4,
+                              Qt.AspectRatioMode.KeepAspectRatio,
+                              Qt.TransformationMode.SmoothTransformation)
+                )
+                has_px = True
+
+        if not has_px:
+            thumb.setText(f'🖥\nPantalla {idx + 1}')
+
+        self._cards.append((thumb, has_px))
+        vbox.addWidget(thumb)
+
+        lbl = QLabel(f'Pantalla {idx + 1}  ·  {info.width}×{info.height}')
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl.setStyleSheet('font-size:11px; color:#6c7086; background:transparent; border:none;')
+        vbox.addWidget(lbl)
+
+        for w in (card, thumb, lbl):
+            w.mousePressEvent = lambda _e, i=idx: self._apply(i)
+
+        return card
+
+    def _apply(self, idx: int) -> None:
+        self._selected = idx
+        for i, (thumb, has_px) in enumerate(self._cards):
+            border = '3px solid #89b4fa' if i == idx else '2px solid #313244'
+            base   = f'border:{border}; border-radius:6px; background:#1e1e2e;'
+            thumb.setStyleSheet(base if has_px else base + ' color:#6c7086; font-size:13px;')
+
+
 _STYLE = """
 QWidget {
     background-color: #11111b;
@@ -225,10 +344,19 @@ class RecorderWindow(QWidget):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        layout.addWidget(self._lbl('PANTALLA', '11px', '#6c7086'))
-        self._screen_combo = QComboBox()
-        self._screen_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        layout.addWidget(self._screen_combo)
+        hdr_row = QHBoxLayout()
+        hdr_row.addWidget(self._lbl('PANTALLA  —  haz clic en la imagen que ves', '11px', '#6c7086'))
+        hdr_row.addStretch()
+        btn_refresh = QPushButton('↻')
+        btn_refresh.setObjectName('btn_config')
+        btn_refresh.setFixedSize(26, 26)
+        btn_refresh.setToolTip('Tomar nuevas capturas de pantalla')
+        btn_refresh.clicked.connect(self._refresh_screenshots)
+        hdr_row.addWidget(btn_refresh)
+        layout.addLayout(hdr_row)
+
+        self._screen_selector = ScreenThumbnailSelector()
+        layout.addWidget(self._screen_selector)
 
         layout.addWidget(self._lbl('MICRÓFONO', '11px', '#6c7086'))
         mic_row = QHBoxLayout()
@@ -290,9 +418,7 @@ class RecorderWindow(QWidget):
 
     def _load_devices(self):
         self._screens = get_screens()
-        self._screen_combo.clear()
-        for s in self._screens:
-            self._screen_combo.addItem(s.label(), s)
+        self._screen_selector.load(self._screens, self._config.rec_screen_name)
 
         self._mics, self._sys_devs = get_audio_devices()
         self._mic_combo.clear()
@@ -313,14 +439,6 @@ class RecorderWindow(QWidget):
             self._chk_sys.setEnabled(False)
             self._sys_combo.setEnabled(False)
             self._sys_combo.addItem('No se detectó audio del sistema')
-
-        # Pre-select saved devices
-        saved_screen = self._config.rec_screen_name
-        for i in range(self._screen_combo.count()):
-            s: ScreenInfo = self._screen_combo.itemData(i)
-            if s and s.name == saved_screen:
-                self._screen_combo.setCurrentIndex(i)
-                break
 
         for combo, saved_id in [(self._mic_combo, self._config.rec_mic_id),
                                  (self._sys_combo, self._config.rec_sys_id)]:
@@ -343,7 +461,7 @@ class RecorderWindow(QWidget):
         if self._is_configured():
             self._config_panel.hide()
             self._summary_box.show()
-            self._lbl_screen.setText(f'🖥  Pantalla: {self._config.rec_screen_name}')
+            self._lbl_screen.setText(f'🖥  {self._screen_selector.selected_label()}')
             mic_label = self._mic_display(self._config.rec_mic_id) or 'Desactivado'
             sys_label = self._sys_display(self._config.rec_sys_id) or 'Desactivado'
             self._lbl_mic.setText(f'🎙  Micrófono: {mic_label}')
@@ -377,6 +495,14 @@ class RecorderWindow(QWidget):
         else:
             self._summary_box.hide()
             self._config_panel.show()
+            self._refresh_screenshots()
+
+    def _refresh_screenshots(self):
+        sel = self._screen_selector.selected_screen()
+        self._screen_selector.load(
+            self._screens,
+            sel.name if sel else self._config.rec_screen_name,
+        )
 
     def _build_volume_row(self) -> QWidget:
         """Always-visible mic OS volume control."""
@@ -414,7 +540,7 @@ class RecorderWindow(QWidget):
         set_mic_volume(value / 100.0)
 
     def _save_device_config(self):
-        screen: Optional[ScreenInfo] = self._screen_combo.currentData()
+        screen = self._screen_selector.selected_screen()
         if screen:
             self._config.rec_screen_name = screen.name
         self._config.rec_mic_id = (
