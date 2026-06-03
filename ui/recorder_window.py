@@ -103,8 +103,10 @@ class RecorderWindow(QWidget):
         self._recorder   = ScreenRecorder(self)
         self._transcriber: Optional[TranscriberThread] = None
         self._summarizer:  Optional[SummarizerThread]  = None
-        self._indicator  = None   # RecordingIndicator (shown while recording)
-        self._results_win = None  # RecordingResultsWindow
+        self._indicator   = None   # RecordingIndicator (shown while recording)
+        self._border      = None   # RecordingBorderOverlay (pulsing screen border)
+        self._rec_screen_idx = 0   # Qt screen index of the screen being recorded
+        self._results_win = None   # RecordingResultsWindow
 
         self._screens:   List[ScreenInfo] = []
         self._mics:      list = []
@@ -459,6 +461,7 @@ class RecorderWindow(QWidget):
         self._sum_text   = ''
         self._trans_done = False
         self._sum_done   = False
+        self._rec_screen_idx = screen.index
 
         self._recorder.start(screen, self._current_output, mic=mic, sys_audio=sys_audio)
 
@@ -471,15 +474,22 @@ class RecorderWindow(QWidget):
     def _on_rec_paused(self):
         if self._indicator:
             self._indicator.set_paused(True)
+        if self._border:
+            self._border.set_paused(True)
 
     def _on_rec_resumed(self):
         if self._indicator:
             self._indicator.set_paused(False)
+        if self._border:
+            self._border.set_paused(False)
 
     def _on_rec_finished(self, path: str):
         if self._indicator:
             self._indicator.close()
             self._indicator = None
+        if self._border:
+            self._border.close()
+            self._border = None
         self._set_status('✓ Grabación guardada. Transcribiendo…', '#4ade80')
         self._start_transcription(path)
 
@@ -487,6 +497,9 @@ class RecorderWindow(QWidget):
         if self._indicator:
             self._indicator.close()
             self._indicator = None
+        if self._border:
+            self._border.close()
+            self._border = None
         self.show()
         self._set_status(f'✗ Error: {msg[:120]}', '#f38ba8')
 
@@ -494,10 +507,15 @@ class RecorderWindow(QWidget):
 
     def _show_indicator(self):
         from ui.recording_indicator import RecordingIndicator
+        from ui.recording_border import RecordingBorderOverlay
         self._indicator = RecordingIndicator()
         self._indicator.pause_clicked.connect(self._on_indicator_pause)
         self._indicator.stop_clicked.connect(self._on_indicator_stop)
         self._indicator.show()
+
+        self._border = RecordingBorderOverlay(self._rec_screen_idx)
+        self._border.show()
+        self._indicator.raise_()   # keep the floating control above the border
 
     def _on_indicator_pause(self):
         if self._recorder.state == 'recording':
