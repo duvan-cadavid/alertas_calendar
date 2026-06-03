@@ -268,6 +268,9 @@ class DashboardWindow(QWidget):
         self._downloader: InstallerDownloader | None = None
         self._update_url: str = ""
         self._update_btn: QPushButton | None = None
+        # IDs confirmed in this session — applied on every grid rebuild so a
+        # slow server propagation or a 60-s refresh doesn't revert the button.
+        self._confirmed_ids: set[int] = set()
 
         self.setWindowTitle("Agenda de Hoy — Goujana Agenda")
         self.setMinimumSize(860, 600)
@@ -452,6 +455,10 @@ class DashboardWindow(QWidget):
                 f"{name}  —  {len(appointments)} evento(s)" if name else f"{len(appointments)} evento(s)"
             )
             for i, appt in enumerate(appointments):
+                # Apply local session state so a pending server update or a
+                # slow API propagation never reverts an already-confirmed card.
+                if appt.id in self._confirmed_ids:
+                    appt.assisted = True
                 row, col = divmod(i, self.COLS)
                 card = AppointmentCard(appt)
                 card.confirm_requested.connect(self._on_confirm_requested)
@@ -459,10 +466,21 @@ class DashboardWindow(QWidget):
 
         self._footer.setText(f"Última actualización: {now_str}  ·  actualiza cada minuto")
 
+    def mark_confirmed(self, appointment_id: int) -> None:
+        """Mark an appointment confirmed locally without an API call.
+
+        Called by TrayApp when the alert-window confirm path already sent
+        the PATCH so the dashboard doesn't show the button as active again
+        on the next 60-second refresh.
+        """
+        self._confirmed_ids.add(appointment_id)
+
     def _on_confirm_requested(self, appointment_id: int):
+        self._confirmed_ids.add(appointment_id)   # optimistic: survives refresh
         try:
             self._client.confirm_attendance(appointment_id)
         except Exception as e:
+            self._confirmed_ids.discard(appointment_id)   # revert on failure
             print(f"Error confirmando asistencia: {e}")
 
     def _on_fail(self, msg: str):

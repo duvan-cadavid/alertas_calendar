@@ -216,6 +216,9 @@ class TrayApp:
             client.confirm_attendance(appt.id)
         except Exception:
             pass
+        # Tell the dashboard so its next 60-s refresh doesn't re-enable the button.
+        if self._dashboard_window:
+            self._dashboard_window.mark_confirmed(appt.id)
         self._show_recording_prompt(appt, show_cancel=False)
 
     def _show_recording_prompt(self, appt: Appointment, show_cancel: bool = False):
