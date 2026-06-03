@@ -81,19 +81,20 @@ class TrayApp:
             self.show_dashboard()
 
     def show_dashboard(self, fullscreen: bool = False):
-        if self._dashboard_window and self._dashboard_window.isVisible():
-            self._dashboard_window.raise_()
-            self._dashboard_window.activateWindow()
-            return
         if not self.config.is_configured():
             self.show_settings()
             return
-        from ui.dashboard_window import DashboardWindow
-        self._dashboard_window = DashboardWindow(self.config)
-        self._dashboard_window.open_settings.connect(self.show_settings)
-        self._dashboard_window.open_recorder.connect(self.show_recorder)
-        self._dashboard_window.test_alert.connect(self._test_alert)
-        self._show_on_primary(self._dashboard_window, maximized=fullscreen)
+        if self._dashboard_window is None:
+            from ui.dashboard_window import DashboardWindow
+            self._dashboard_window = DashboardWindow(self.config)
+            self._dashboard_window.open_settings.connect(self.show_settings)
+            self._dashboard_window.open_recorder.connect(self.show_recorder)
+            self._dashboard_window.test_alert.connect(self._test_alert)
+            self._show_on_primary(self._dashboard_window, maximized=fullscreen)
+        elif not self._dashboard_window.isVisible():
+            self._show_on_primary(self._dashboard_window, maximized=False)
+        self._dashboard_window.raise_()
+        self._dashboard_window.activateWindow()
 
     @staticmethod
     def _show_on_primary(window, maximized: bool = False):
@@ -203,7 +204,11 @@ class TrayApp:
 
     def _on_alert_destroyed(self):
         self._alert_window = None
-        
+        if self._dashboard_window:
+            self._dashboard_window.show()
+            self._dashboard_window.raise_()
+            self._dashboard_window.activateWindow()
+
 
     def _on_attendance_confirmed(self, appt: Appointment):
         try:

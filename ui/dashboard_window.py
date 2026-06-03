@@ -469,6 +469,10 @@ class DashboardWindow(QWidget):
         self._subtitle.setText(f"Error al cargar: {msg[:60]}")
         self._footer.setText("Sin conexión — reintentando en 1 minuto")
 
+    def closeEvent(self, event):
+        event.ignore()
+        self.hide()
+
     def _clear_grid(self):
         while self._grid.count():
             item = self._grid.takeAt(0)

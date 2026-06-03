@@ -29,8 +29,7 @@ PrivilegesRequired=admin
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
 [Tasks]
-Name: "startup";     Description: "Iniciar automáticamente al encender el equipo"; GroupDescription: "Opciones adicionales:"
-Name: "desktopicon"; Description: "Crear icono en el escritorio";                  GroupDescription: "Opciones adicionales:"
+Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescription: "Opciones adicionales:"
 
 [Files]
 ; Aplicación principal
@@ -44,8 +43,8 @@ Name: "{group}\Desinstalar";        Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Registry]
-; Autostart (opcional)
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue; Tasks: startup
+; Autostart obligatorio — inicia con Windows en cualquier sesión del usuario
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Iniciar {#AppName} ahora"; Flags: nowait postinstall skipifsilent
