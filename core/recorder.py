@@ -132,8 +132,11 @@ def _win32_monitor_positions(qt_screens: list) -> dict:
 
     EnumDisplayMonitors returns MONITORINFO.rcMonitor in physical virtual-desktop
     coordinates — the same system gdigrab uses — regardless of per-monitor DPI.
-    Matching is done by physical resolution (w × h), tracking already-used
-    entries so identical monitors are assigned to different Qt screens.
+
+    Matching strategy (in order of preference):
+      1. By position (primary screen at 0,0; then by x,y coords)
+         — avoids confusion when identical-resolution monitors exist
+      2. By physical resolution fallback
     """
     import ctypes
     from ctypes import wintypes
@@ -170,16 +173,51 @@ def _win32_monitor_positions(qt_screens: list) -> dict:
 
     out: dict = {}
     used: set = set()
+
+    # Primary screen (0, 0) likely matches monitors[0], but not always.
+    # Sort monitors by distance from (0, 0) to improve primary detection.
+    monitors_sorted = sorted(enumerate(monitors),
+                            key=lambda item: abs(item[1][0]) + abs(item[1][1]))
+
     for i, s in enumerate(qt_screens):
         g = s.geometry()
         ratio = s.devicePixelRatio()
         pw = round(g.width() * ratio)
         ph = round(g.height() * ratio)
+
+        # For primary screen (i==0), try to match (0, 0) position first
+        if i == 0:
+            for j, (x, y, w, h) in monitors_sorted:
+                if j not in used and x == 0 and y == 0 and w == pw and h == ph:
+                    out[i] = (x, y, w, h)
+                    used.add(j)
+                    _log.debug('Primary screen: matched by position (0,0)')
+                    break
+            if i in out:
+                continue
+
+        # Fallback: match by position (x, y) + resolution for consistency
+        # This keeps the virtual desktop layout stable across reconnections
+        qt_x = round(g.x() * ratio)
+        qt_y = round(g.y() * ratio)
         for j, (x, y, w, h) in enumerate(monitors):
             if j not in used and w == pw and h == ph:
-                out[i] = (x, y, w, h)
-                used.add(j)
-                break
+                # Prefer position match if available
+                if x == qt_x and y == qt_y:
+                    out[i] = (x, y, w, h)
+                    used.add(j)
+                    _log.debug(f'Screen {i}: matched by position ({x},{y})')
+                    break
+
+        # Last resort: match by resolution only
+        if i not in out:
+            for j, (x, y, w, h) in enumerate(monitors):
+                if j not in used and w == pw and h == ph:
+                    out[i] = (x, y, w, h)
+                    used.add(j)
+                    _log.warning(f'Screen {i}: matched by resolution only (position mismatch)')
+                    break
+
     return out
 
 
@@ -607,6 +645,10 @@ class ScreenRecorder(QObject):
         s = self._screen
         cmd = [_get_ffmpeg_exe(), '-y']
 
+        _log.info('=== _build_cmd ===')
+        _log.info('Recording screen: index=%d, name=%r, position=(%d,%d), size=%dx%d, scale=%.0f%%',
+                  s.index, s.name, s.x, s.y, s.width, s.height, s.scale * 100)
+
         if sys.platform == 'win32':
             cmd += [
                 '-f', 'gdigrab',
@@ -614,6 +656,8 @@ class ScreenRecorder(QObject):
                 '-video_size', f'{s.width}x{s.height}',
                 '-framerate', '30', '-i', 'desktop',
             ]
+            _log.info('Windows gdigrab: offset=(%d,%d), size=%dx%d',
+                      s.x, s.y, s.width, s.height)
         else:
             disp = os.environ.get('DISPLAY', ':0.0')
             cmd += [
@@ -622,6 +666,8 @@ class ScreenRecorder(QObject):
                 '-framerate', '30',
                 '-i', f'{disp}+{s.x},{s.y}',
             ]
+            _log.info('X11 x11grab: display=%s, offset=(%d,%d), size=%dx%d',
+                      disp, s.x, s.y, s.width, s.height)
 
         audio_n = 0
         if self._mic:
@@ -669,7 +715,6 @@ class ScreenRecorder(QObject):
             cmd += ['-an']
 
         cmd.append(output)
-        _log.info('=== _build_cmd ===')
         _log.info('mic=%r  sys_audio=%r', self._mic, self._sys)
-        _log.info('cmd: %s', ' '.join(cmd))
+        _log.info('ffmpeg cmd: %s', ' '.join(cmd))
         return cmd

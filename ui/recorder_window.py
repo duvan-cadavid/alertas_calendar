@@ -604,6 +604,16 @@ class RecorderWindow(QWidget):
             )
         self._rec_screen_geo = qt_screen.geometry()
 
+        import logging
+        _log = logging.getLogger('recorder')
+        _log.info('=== Recording start ===')
+        _log.info('User selected: index=%d, name=%r, label=%r',
+                  screen.index, screen.name, screen.label())
+        _log.info('Qt screen found: index=%s, name=%r, geometry=%s',
+                  next((i for i, s in enumerate(qt_screens) if s is qt_screen), '?'),
+                  qt_screen.name(), qt_screen.geometry())
+        _log.info('Recording output: %s', self._current_output)
+
         self._recorder.start(screen, self._current_output, mic=mic, sys_audio=sys_audio)
 
     # ── Recorder signals ──────────────────────────────────────────
