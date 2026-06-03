@@ -8,6 +8,10 @@ _SYSTEM = (
     'Nunca inventas información que no esté en la transcripción.'
 )
 
+# ~400 tokens for system + prompt template; reserve the rest for transcription text.
+# Groq on_demand TPM limit for llama-3.3-70b-versatile is 12 000.
+_MAX_TRANSCRIPT_CHARS = 40_000  # ≈ 10 000 tokens, leaves headroom for prompt overhead
+
 _PROMPT = """Analiza la siguiente transcripción y sigue estos pasos:
 
 PASO 1 — Clasifica el tipo de evento:
@@ -68,12 +72,15 @@ class SummarizerThread(QThread):
     def run(self):
         try:
             from groq import Groq
+            text = self._text
+            if len(text) > _MAX_TRANSCRIPT_CHARS:
+                text = text[:_MAX_TRANSCRIPT_CHARS] + '\n\n[Transcripción truncada por longitud]'
             client = Groq(api_key=self._api_key)
             resp = client.chat.completions.create(
                 model=self.MODEL,
                 messages=[
                     {'role': 'system', 'content': _SYSTEM},
-                    {'role': 'user', 'content': _PROMPT.format(text=self._text)},
+                    {'role': 'user', 'content': _PROMPT.format(text=text)},
                 ],
                 temperature=0.3,
                 max_tokens=1500,
