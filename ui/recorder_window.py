@@ -576,9 +576,12 @@ class RecorderWindow(QWidget):
             self._set_status('⚠  Guarda la configuración de dispositivos primero.', '#fb923c')
             return
 
-        screen = self._resolve_screen()
+        # Use the thumbnail the user clicked as the single source of truth.
+        # This guarantees that the selected image, the recorded area, and the
+        # red border all refer to the exact same physical screen.
+        screen = self._screen_selector.selected_screen() or self._resolve_screen()
         if not screen:
-            self._set_status('⚠  No se encontró la pantalla configurada.', '#f38ba8')
+            self._set_status('⚠  No se encontró la pantalla.', '#f38ba8')
             return
 
         mic = self._config.rec_mic_id or None
@@ -588,12 +591,17 @@ class RecorderWindow(QWidget):
         self._sum_text   = ''
         self._trans_done = False
         self._sum_done   = False
-        # Resolve the exact screen geometry by name — more reliable than
-        # index matching, which can break when screens are added/removed.
-        qt_screen = next(
-            (s for s in QApplication.screens() if s.name() == screen.name),
-            QApplication.primaryScreen(),
-        )
+
+        # Prefer index-based lookup (O(1), same session) then fall back to
+        # name match in case screens were reconnected since _load_devices ran.
+        qt_screens = QApplication.screens()
+        if screen.index < len(qt_screens) and qt_screens[screen.index].name() == screen.name:
+            qt_screen = qt_screens[screen.index]
+        else:
+            qt_screen = next(
+                (s for s in qt_screens if s.name() == screen.name),
+                QApplication.primaryScreen(),
+            )
         self._rec_screen_geo = qt_screen.geometry()
 
         self._recorder.start(screen, self._current_output, mic=mic, sys_audio=sys_audio)
@@ -646,8 +654,12 @@ class RecorderWindow(QWidget):
         self._indicator.stop_clicked.connect(self._on_indicator_stop)
         self._indicator.show()
 
-        self._border = RecordingBorderOverlay(self._rec_screen_geo)
+        geo = self._rec_screen_geo
+        self._border = RecordingBorderOverlay(geo)
         self._border.show()
+        # Reapply geometry after show() so Windows creates the native window
+        # in the correct per-monitor DPI context (relevant for mixed-DPI setups).
+        self._border.setGeometry(geo)
         self._indicator.raise_()   # keep the floating control above the border
 
     def _on_indicator_pause(self):
