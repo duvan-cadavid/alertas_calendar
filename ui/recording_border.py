@@ -1,8 +1,8 @@
 import math
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QRect, QTimer
 from PyQt6.QtGui import QPainter, QColor, QPen
-from PyQt6.QtWidgets import QWidget, QApplication
+from PyQt6.QtWidgets import QWidget
 
 _BORDER_W = 5                          # logical pixels — DPI-aware on all screens
 _COLOR    = QColor(243, 139, 168)      # #f38ba8 — same red as the recording indicator
@@ -11,12 +11,14 @@ _COLOR    = QColor(243, 139, 168)      # #f38ba8 — same red as the recording i
 class RecordingBorderOverlay(QWidget):
     """Full-screen transparent overlay with a slow pulsing red border.
 
-    Covers exactly the screen being recorded.  All mouse and keyboard events
-    pass through so the user can keep working normally.
+    Accepts the exact QRect geometry of the recorded screen (in global
+    logical-pixel coordinates) so the border always covers the right
+    monitor regardless of index ordering or DPI configuration.
+    All mouse/keyboard events pass through so the user can keep working.
     Hides automatically while paused and reappears on resume.
     """
 
-    def __init__(self, screen_index: int = 0, parent=None):
+    def __init__(self, screen_geo: QRect, parent=None):
         super().__init__(parent)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -31,9 +33,7 @@ class RecordingBorderOverlay(QWidget):
         self._alpha  = 200
         self._paused = False
 
-        screens = QApplication.screens()
-        screen  = screens[screen_index] if screen_index < len(screens) else QApplication.primaryScreen()
-        self.setGeometry(screen.geometry())
+        self.setGeometry(screen_geo)
 
         # Pulse timer: 50 ms → 20 fps, smooth enough for a slow glow
         self._timer = QTimer(self)

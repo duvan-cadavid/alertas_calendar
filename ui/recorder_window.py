@@ -4,10 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QRect, QTimer
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QCheckBox, QFrame, QSizePolicy, QScrollArea, QSlider,
+    QApplication,
 )
 
 from core.mic_volume import get_mic_volume, set_mic_volume
@@ -103,10 +104,10 @@ class RecorderWindow(QWidget):
         self._recorder   = ScreenRecorder(self)
         self._transcriber: Optional[TranscriberThread] = None
         self._summarizer:  Optional[SummarizerThread]  = None
-        self._indicator   = None   # RecordingIndicator (shown while recording)
-        self._border      = None   # RecordingBorderOverlay (pulsing screen border)
-        self._rec_screen_idx = 0   # Qt screen index of the screen being recorded
-        self._results_win = None   # RecordingResultsWindow
+        self._indicator      = None          # RecordingIndicator (shown while recording)
+        self._border         = None          # RecordingBorderOverlay (pulsing screen border)
+        self._rec_screen_geo = QRect()       # geometry of the screen being recorded
+        self._results_win    = None          # RecordingResultsWindow
 
         self._screens:   List[ScreenInfo] = []
         self._mics:      list = []
@@ -461,7 +462,13 @@ class RecorderWindow(QWidget):
         self._sum_text   = ''
         self._trans_done = False
         self._sum_done   = False
-        self._rec_screen_idx = screen.index
+        # Resolve the exact screen geometry by name — more reliable than
+        # index matching, which can break when screens are added/removed.
+        qt_screen = next(
+            (s for s in QApplication.screens() if s.name() == screen.name),
+            QApplication.primaryScreen(),
+        )
+        self._rec_screen_geo = qt_screen.geometry()
 
         self._recorder.start(screen, self._current_output, mic=mic, sys_audio=sys_audio)
 
@@ -513,7 +520,7 @@ class RecorderWindow(QWidget):
         self._indicator.stop_clicked.connect(self._on_indicator_stop)
         self._indicator.show()
 
-        self._border = RecordingBorderOverlay(self._rec_screen_idx)
+        self._border = RecordingBorderOverlay(self._rec_screen_geo)
         self._border.show()
         self._indicator.raise_()   # keep the floating control above the border
 
