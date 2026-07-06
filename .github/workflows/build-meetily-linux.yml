@@ -14,9 +14,15 @@ on:
         description: 'Tag de Meetily a compilar (ej: v0.4.0)'
         required: true
         default: 'v0.4.0'
+  push:
+    tags:
+      - 'meetily-build-*'   # disparo alternativo sin UI: git push origin meetily-build-1
 
 permissions:
   contents: write
+
+env:
+  MEETILY_REF: ${{ inputs.meetily_ref || 'v0.4.0' }}
 
 jobs:
   build:
@@ -28,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Zackriya-Solutions/meeting-minutes
-          ref: ${{ inputs.meetily_ref }}
+          ref: ${{ env.MEETILY_REF }}
           submodules: recursive
 
       - name: Dependencias del sistema (Tauri + whisper.cpp)
@@ -72,11 +78,11 @@ jobs:
           echo "AppImage: $APPIMAGE ($(du -h "$APPIMAGE" | cut -f1))"
           find frontend/src-tauri/target/release/bundle -name '*.deb' || true
 
-      - name: Publicar release meetily-${{ inputs.meetily_ref }}
+      - name: Publicar release meetily-${{ env.MEETILY_REF }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: meetily-${{ inputs.meetily_ref }}
-          name: "Meetily ${{ inputs.meetily_ref }} (Linux, compilado para Alertas de Calendarios)"
+          tag_name: meetily-${{ env.MEETILY_REF }}
+          name: "Meetily ${{ env.MEETILY_REF }} (Linux, compilado para Goujana Agenda)"
           files: |
             ${{ steps.artifacts.outputs.appimage }}
             frontend/src-tauri/target/release/bundle/deb/*.deb
