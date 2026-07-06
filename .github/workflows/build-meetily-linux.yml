@@ -56,14 +56,16 @@ jobs:
       - name: pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Compilar Meetily (AppImage, CPU-only)
         working-directory: frontend
         # Sin GPU en el runner, auto-detect-gpu.js cae a modo CPU-only:
         # el AppImage resultante funciona en cualquier máquina x86_64.
+        # --no-frozen-lockfile: el lockfile del tag v0.4.0 está
+        # desincronizado con package.json (bug upstream de Meetily).
         run: |
-          pnpm install --frozen-lockfile
+          pnpm install --no-frozen-lockfile
           chmod +x build-gpu.sh
           ./build-gpu.sh
 
