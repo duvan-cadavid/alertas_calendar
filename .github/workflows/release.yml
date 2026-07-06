@@ -91,6 +91,17 @@ jobs:
       - name: Instalar Inno Setup
         run: choco install innosetup --no-progress -y
 
+      - name: Descargar instalador de Meetily (Windows)
+        shell: bash
+        env:
+          # Debe coincidir con #define MeetilyVersion en build/setup.iss
+          MEETILY_VERSION: '0.4.0'
+        run: |
+          mkdir -p vendor
+          curl -fL --retry 3 \
+            -o "vendor/meetily_${MEETILY_VERSION}_x64-setup.exe" \
+            "https://github.com/Zackriya-Solutions/meeting-minutes/releases/download/v${MEETILY_VERSION}/meetily_${MEETILY_VERSION}_x64-setup.exe"
+
       - name: Actualizar versión en instalador
         shell: powershell
         run: |
@@ -133,6 +144,9 @@ jobs:
             2. Ejecuta el instalador (requiere permisos de administrador)
             3. FFmpeg se instala y configura automáticamente
             4. La app se inicia en la bandeja del sistema (system tray)
+
+            El instalador incluye **Meetily** (transcripción y resumen de reuniones),
+            que se instala automáticamente en modo silencioso.
 
             ## Requisitos
 

@@ -1,0 +1,88 @@
+name: Build Meetily Linux
+
+# Compila Meetily (Zackriya-Solutions/meeting-minutes) desde fuente para Linux
+# y publica el AppImage como release "meetily-vX.Y.Z" de este repo.
+# install.sh descarga ese AppImage para que el usuario final nunca compile nada.
+#
+# Ejecutar manualmente (Actions -> Build Meetily Linux -> Run workflow)
+# cada vez que quieras actualizar la versión de Meetily distribuida.
+
+on:
+  workflow_dispatch:
+    inputs:
+      meetily_ref:
+        description: 'Tag de Meetily a compilar (ej: v0.4.0)'
+        required: true
+        default: 'v0.4.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout Meetily
+        uses: actions/checkout@v4
+        with:
+          repository: Zackriya-Solutions/meeting-minutes
+          ref: ${{ inputs.meetily_ref }}
+          submodules: recursive
+
+      - name: Dependencias del sistema (Tauri + whisper.cpp)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake git curl wget file patchelf pkg-config \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libasound2-dev libssl-dev libfuse2
+
+      - name: Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Compilar Meetily (AppImage, CPU-only)
+        working-directory: frontend
+        # Sin GPU en el runner, auto-detect-gpu.js cae a modo CPU-only:
+        # el AppImage resultante funciona en cualquier máquina x86_64.
+        run: |
+          pnpm install --frozen-lockfile
+          chmod +x build-gpu.sh
+          ./build-gpu.sh
+
+      - name: Localizar artefactos
+        id: artifacts
+        run: |
+          APPIMAGE=$(find frontend/src-tauri/target/release/bundle -name '*.AppImage' | head -n1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "ERROR: no se generó ningún AppImage"; exit 1
+          fi
+          echo "appimage=$APPIMAGE" >> "$GITHUB_OUTPUT"
+          echo "AppImage: $APPIMAGE ($(du -h "$APPIMAGE" | cut -f1))"
+          find frontend/src-tauri/target/release/bundle -name '*.deb' || true
+
+      - name: Publicar release meetily-${{ inputs.meetily_ref }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: meetily-${{ inputs.meetily_ref }}
+          name: "Meetily ${{ inputs.meetily_ref }} (Linux, compilado para Alertas de Calendarios)"
+          files: |
+            ${{ steps.artifacts.outputs.appimage }}
+            frontend/src-tauri/target/release/bundle/deb/*.deb
+          body: |
+            AppImage de [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes)
+            ${{ inputs.meetily_ref }} compilado desde fuente (CPU-only, x86_64).
+
+            Este binario lo descarga automáticamente `install.sh` de Alertas de Calendarios.
+            Licencia MIT del proyecto original.

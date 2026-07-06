@@ -7,6 +7,11 @@
 #define AppPublisher "Goujana"
 #define AppExeName   "Goujana Agenda.exe"
 #define AppId        "{{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+; Meetily (transcripción de reuniones) — el .exe se descarga a vendor\
+; antes de compilar (lo hace el workflow de release; ver release.yml).
+; Si vendor\ no existe, el instalador se compila sin Meetily.
+#define MeetilyVersion "0.4.0"
+#define MeetilySetup   "meetily_" + MeetilyVersion + "_x64-setup.exe"
 
 [Setup]
 AppId={#AppId}
@@ -36,6 +41,8 @@ Name: "desktopicon"; Description: "Crear icono en el escritorio"; GroupDescripti
 Source: "..\dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; FFmpeg — descargado por el workflow de CI en build\bin\ffmpeg.exe
 Source: "bin\ffmpeg.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+; Meetily — descargado por el workflow de CI en vendor\ (opcional)
+Source: "..\vendor\{#MeetilySetup}"; DestDir: "{tmp}"; Flags: deleteafterinstall skipifsourcedoesntexist
 
 [Icons]
 Name: "{group}\{#AppName}";         Filename: "{app}\{#AppExeName}"
@@ -47,6 +54,10 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desk
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue
 
 [Run]
+; Instalación silenciosa de Meetily (instalador NSIS de Tauri: flag /S)
+Filename: "{tmp}\{#MeetilySetup}"; Parameters: "/S"; \
+    StatusMsg: "Instalando Meetily (transcripción de reuniones)..."; \
+    Flags: waituntilterminated skipifdoesntexist
 Filename: "{app}\{#AppExeName}"; Description: "Iniciar {#AppName} ahora"; Flags: nowait postinstall skipifsilent
 
 [Code]
