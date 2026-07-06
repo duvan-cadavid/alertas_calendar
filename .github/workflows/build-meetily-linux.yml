@@ -67,7 +67,21 @@ jobs:
         run: |
           pnpm install --no-frozen-lockfile
           chmod +x build-gpu.sh
-          ./build-gpu.sh
+          set +e
+          ./build-gpu.sh 2>&1 | tee /tmp/build.log
+          RC=${PIPESTATUS[0]}
+          if [ "$RC" -ne 0 ]; then
+            # Publicar el final del log como anotación (visible sin token)
+            {
+              echo "## build-gpu.sh falló (exit $RC)"
+              echo '```'
+              tail -100 /tmp/build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            MSG=$(tail -40 /tmp/build.log | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g' | cut -c1-3500)
+            echo "::error title=build-gpu.sh failed::$MSG"
+          fi
+          exit "$RC"
 
       - name: Localizar artefactos
         id: artifacts
