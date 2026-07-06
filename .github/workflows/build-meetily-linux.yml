@@ -58,6 +58,19 @@ jobs:
         with:
           version: 10
 
+      - name: Desactivar firma del auto-updater
+        # El updater de Meetily exige TAURI_SIGNING_PRIVATE_KEY (llave privada
+        # de Zackriya). No lo necesitamos: distribuimos el AppImage nosotros.
+        run: |
+          python3 - <<'EOF'
+          import json
+          p = 'frontend/src-tauri/tauri.conf.json'
+          c = json.load(open(p))
+          c.setdefault('bundle', {})['createUpdaterArtifacts'] = False
+          json.dump(c, open(p, 'w'), indent=2)
+          print('createUpdaterArtifacts -> False')
+          EOF
+
       - name: Compilar Meetily (AppImage, CPU-only)
         working-directory: frontend
         # Sin GPU en el runner, auto-detect-gpu.js cae a modo CPU-only:
@@ -85,14 +98,16 @@ jobs:
 
       - name: Localizar artefactos
         id: artifacts
+        # Cargo workspace: los bundles quedan en target/release/bundle
+        # en la raíz del repo, no bajo frontend/src-tauri.
         run: |
-          APPIMAGE=$(find frontend/src-tauri/target/release/bundle -name '*.AppImage' | head -n1)
+          APPIMAGE=$(find target/release/bundle frontend/src-tauri/target/release/bundle -name '*.AppImage' 2>/dev/null | head -n1)
           if [ -z "$APPIMAGE" ]; then
             echo "ERROR: no se generó ningún AppImage"; exit 1
           fi
           echo "appimage=$APPIMAGE" >> "$GITHUB_OUTPUT"
           echo "AppImage: $APPIMAGE ($(du -h "$APPIMAGE" | cut -f1))"
-          find frontend/src-tauri/target/release/bundle -name '*.deb' || true
+          find target/release/bundle -name '*.deb' 2>/dev/null || true
 
       - name: Publicar release meetily-${{ env.MEETILY_REF }}
         uses: softprops/action-gh-release@v2
@@ -101,7 +116,7 @@ jobs:
           name: "Meetily ${{ env.MEETILY_REF }} (Linux, compilado para Goujana Agenda)"
           files: |
             ${{ steps.artifacts.outputs.appimage }}
-            frontend/src-tauri/target/release/bundle/deb/*.deb
+            target/release/bundle/deb/*.deb
           body: |
             AppImage de [Meetily](https://github.com/Zackriya-Solutions/meeting-minutes)
             ${{ inputs.meetily_ref }} compilado desde fuente (CPU-only, x86_64).
