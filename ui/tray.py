@@ -34,6 +34,7 @@ class TrayApp:
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None
         self._update_action = None
+        self._bug_report_thread = None
         self._recording_prompt = None
         self._rec_prompt_timer: QTimer | None = None
         self._update_timer = QTimer()
@@ -63,6 +64,8 @@ class TrayApp:
         menu.addAction("⚙  Configuración",           self.show_settings)
         self._update_action = menu.addAction("🔄  Nueva versión disponible", self._install_update)
         self._update_action.setVisible(False)
+        menu.addSeparator()
+        menu.addAction("🛟  Reportar un problema",    self._report_problem)
         menu.addSeparator()
         import sys
         if sys.platform == 'win32':
@@ -298,6 +301,48 @@ class TrayApp:
         # usuario seguía viendo una versión vieja — ver core/updater.py.
         import logging
         logging.getLogger('recorder').warning('Verificación de actualización falló: %s', msg)
+
+    # ── Reportar un problema ─────────────────────────────────────────
+    def _report_problem(self) -> None:
+        """Junta recorder.log + crash.log y crea un PQR interno (ver
+        core/bug_report.py) — pensado para casos como el de un cliente al
+        que se le cerraba la app al grabar sin ningún error visible: antes
+        la única forma de diagnosticarlo era pedirle el log manualmente por
+        WhatsApp."""
+        if not self.config.is_configured():
+            self._tray.showMessage(
+                "No se pudo reportar", "Configura la app primero (servidor/token).",
+                QSystemTrayIcon.MessageIcon.Warning, 6_000)
+            return
+        if self._bug_report_thread and self._bug_report_thread.isRunning():
+            return
+
+        from PyQt6.QtWidgets import QInputDialog
+        comment, ok = QInputDialog.getMultiLineText(
+            None, "Reportar un problema",
+            "Describe brevemente qué pasó (opcional — el log se adjunta solo):")
+        if not ok:
+            return
+
+        from core.bug_report import BugReportThread
+        self._bug_report_thread = BugReportThread(
+            self.config.server_url, self.config.api_token, self.config.user_id, comment)
+        self._bug_report_thread.done.connect(self._on_bug_report_done)
+        self._bug_report_thread.error.connect(self._on_bug_report_error)
+        self._tray.showMessage(
+            "Enviando reporte…", "Recolectando los logs y creando el reporte.",
+            QSystemTrayIcon.MessageIcon.Information, 4_000)
+        self._bug_report_thread.start()
+
+    def _on_bug_report_done(self, pqr_id: int) -> None:
+        self._tray.showMessage(
+            "Reporte enviado", f"Se creó el reporte #{pqr_id}. Gracias.",
+            QSystemTrayIcon.MessageIcon.Information, 6_000)
+
+    def _on_bug_report_error(self, msg: str) -> None:
+        self._tray.showMessage(
+            "No se pudo enviar el reporte", msg[:150],
+            QSystemTrayIcon.MessageIcon.Critical, 8_000)
 
     def _on_update_available(self, version: str, url: str) -> None:
         self._update_url = url

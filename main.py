@@ -99,6 +99,9 @@ def _ensure_dependencies(app: QApplication) -> None:
 
 
 def main():
+    from core import crash_log
+    crash_log.install()
+
     _check_single_instance()
     _write_pid()
 

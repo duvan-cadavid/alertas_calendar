@@ -29,9 +29,17 @@ import requests
 
 COMPANY = 56529          # GOUJANA SOFTWARE ERP SAS (tenant 6155). Nunca 10852.
 BRANCH = 1640             # Cabañas
-CONCEPT_ACTA_REUNION = 62  # crm_s.Concept "Acta de reunión", creado para este flujo
+CONCEPT_ACTA_REUNION = 62      # crm_s.Concept "Acta de reunión"
+CONCEPT_SOPORTE_TECNICO = 63   # crm_s.Concept "Soporte técnico Alertas" (reportes de bug de la app)
 PRIORITY_MEDIA = '2'
-STATE_CLOSED = '4'        # "Caso cerrado con éxito"
+PRIORITY_ALTA = '3'
+STATE_EN_PROCESO = '2'   # "En proceso" — para lo que aún necesita revisión
+STATE_CLOSED = '4'       # "Caso cerrado con éxito"
+
+# Cliente al que se asignan los reportes de error de la app misma (no son de
+# un cliente de un profesional, son bugs de Alertas — ver core/bug_report.py):
+# Duván Cadavid, el mismo customer ya usado para probar el flujo de PQR.
+BUG_REPORT_CUSTOMER = 79442
 
 _PQR_ENDPOINT = '/api/v1/crm_s/requestscomplaints/'
 _COMMENT_ENDPOINT = '/api/v1/django_comments/comment/'
@@ -53,7 +61,9 @@ class PQRClient:
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def create_pqr(self, customer_id: int, title: str, description_html: str) -> int:
+    def create_pqr(self, customer_id: int, title: str, description_html: str,
+                    concept: int = CONCEPT_ACTA_REUNION, priority: str = PRIORITY_MEDIA,
+                    state: str = STATE_CLOSED) -> int:
         """Crea el PQR y devuelve su id."""
         from datetime import date
         today = date.today().isoformat()
@@ -61,9 +71,9 @@ class PQRClient:
             'company': COMPANY,          # gotcha 2
             'customer': customer_id,
             'branch': BRANCH,
-            'concept': CONCEPT_ACTA_REUNION,
-            'priority': PRIORITY_MEDIA,
-            'state': STATE_CLOSED,
+            'concept': concept,
+            'priority': priority,
+            'state': state,
             'date': today,               # gotcha 3
             'end_date': today,
             'title': title,
