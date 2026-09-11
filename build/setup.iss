@@ -29,6 +29,19 @@ WizardStyle=modern
 ChangesEnvironment=yes
 MinVersion=10.0
 PrivilegesRequired=admin
+; Si Goujana Agenda.exe sigue corriendo (autoarranca con Windows, ver
+; [Registry] más abajo) al reinstalar/actualizar, Windows no deja
+; sobrescribir los archivos que tiene abiertos — Inno Setup los programa
+; para reemplazarlos recién en el PRÓXIMO REINICIO (MoveFileEx con
+; MOVEFILE_DELAY_UNTIL_REBOOT) y, mientras tanto, la app queda corriendo con
+; una mezcla de archivos viejos y nuevos. Así terminó un cliente con
+; core/transcriber.py ya actualizado importando una función que no existía
+; en su core/ai_config.py, todavía viejo — ImportError al abrir el
+; grabador, la app se cerraba sin aviso. CloseApplications detecta y cierra
+; el proceso que tiene los archivos abiertos antes de copiar;
+; RestartApplications lo vuelve a abrir al terminar.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
