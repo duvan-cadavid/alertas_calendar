@@ -721,11 +721,21 @@ class RecorderWindow(QWidget):
             self._refresh_screenshots()
 
     def _refresh_screenshots(self):
+        """Vuelve a preguntarle al sistema qué pantallas hay, no solo retoma
+        capturas de las que ya conocía (era el bug: si conectas un monitor
+        después de abrir esta ventana, el botón "↻" seguía mostrando solo
+        las pantallas de cuando arrancó la app — self._screens nunca se
+        refrescaba). Esta misma lista desactualizada es también lo que usaba
+        _on_start_clicked() para calcular la región que graba ffmpeg, así que
+        si el layout de monitores cambió mientras la ventana estaba abierta,
+        el recuadro rojo (que sí se recalcula fresco en _on_start_clicked)
+        podía terminar apuntando a otra pantalla que la que realmente se
+        grababa — mismo origen para ambos síntomas.
+        """
         sel = self._screen_selector.selected_screen()
-        self._screen_selector.load(
-            self._screens,
-            sel.name if sel else self._config.rec_screen_name,
-        )
+        selected_name = sel.name if sel else self._config.rec_screen_name
+        self._screens = get_screens()
+        self._screen_selector.load(self._screens, selected_name)
 
     def _build_volume_row(self) -> QWidget:
         """Always-visible mic OS volume control."""
@@ -798,6 +808,16 @@ class RecorderWindow(QWidget):
         if not self._is_configured():
             self._set_status('⚠  Guarda la configuración de dispositivos primero.', '#fb923c')
             return
+
+        # Refresca la lista de pantallas justo antes de grabar: si el layout
+        # de monitores cambió desde que se abrió esta ventana (uno nuevo
+        # conectado, reordenados) y no se usó el botón "↻", la región que
+        # ffmpeg va a grabar (calculada más abajo a partir de self._screens)
+        # debe reflejar la topología actual, no la de cuando arrancó la app.
+        sel = self._screen_selector.selected_screen()
+        selected_name = sel.name if sel else self._config.rec_screen_name
+        self._screens = get_screens()
+        self._screen_selector.load(self._screens, selected_name)
 
         # Use the thumbnail the user clicked as the single source of truth.
         # This guarantees that the selected image, the recorded area, and the
