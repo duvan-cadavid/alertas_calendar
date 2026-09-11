@@ -725,13 +725,11 @@ class RecorderWindow(QWidget):
         capturas de las que ya conocía (era el bug: si conectas un monitor
         después de abrir esta ventana, el botón "↻" seguía mostrando solo
         las pantallas de cuando arrancó la app — self._screens nunca se
-        refrescaba). Esta misma lista desactualizada es también lo que usaba
-        _on_start_clicked() para calcular la región que graba ffmpeg, así que
-        si el layout de monitores cambió mientras la ventana estaba abierta,
-        el recuadro rojo (que sí se recalcula fresco en _on_start_clicked)
-        podía terminar apuntando a otra pantalla que la que realmente se
-        grababa — mismo origen para ambos síntomas.
-        """
+        refrescaba). Se llama aquí y al abrir el panel de configuración
+        (_toggle_config_panel); a propósito NO se llama desde
+        _on_start_clicked() — ver el comentario ahí sobre por qué repetir
+        esto en la ruta de "empezar a grabar" causó cierres de la app en
+        Windows."""
         sel = self._screen_selector.selected_screen()
         selected_name = sel.name if sel else self._config.rec_screen_name
         self._screens = get_screens()
@@ -809,15 +807,18 @@ class RecorderWindow(QWidget):
             self._set_status('⚠  Guarda la configuración de dispositivos primero.', '#fb923c')
             return
 
-        # Refresca la lista de pantallas justo antes de grabar: si el layout
-        # de monitores cambió desde que se abrió esta ventana (uno nuevo
-        # conectado, reordenados) y no se usó el botón "↻", la región que
-        # ffmpeg va a grabar (calculada más abajo a partir de self._screens)
-        # debe reflejar la topología actual, no la de cuando arrancó la app.
-        sel = self._screen_selector.selected_screen()
-        selected_name = sel.name if sel else self._config.rec_screen_name
-        self._screens = get_screens()
-        self._screen_selector.load(self._screens, selected_name)
+        # NOTA: antes esto también volvía a llamar get_screens()/recargaba
+        # las miniaturas aquí mismo, para cubrir el caso de que el layout de
+        # monitores cambiara mientras la ventana estaba abierta sin usar el
+        # botón "↻". Se revirtió: en Windows esa función pasa por un
+        # callback nativo de ctypes (EnumDisplayMonitors, ver
+        # core/recorder.py _win32_monitor_positions) y 2 clientes reportaron
+        # que la app se cerraba entera al dar clic en "Iniciar grabación" —
+        # justo el tipo de fallo que produce una excepción dentro de un
+        # callback ctypes (no es una excepción Python normal que Qt pueda
+        # atrapar). El refresco sigue disponible a demanda con "↻"
+        # (_refresh_screenshots), que corre solo cuando el usuario lo pide,
+        # no en la ruta caliente de "empezar a grabar".
 
         # Use the thumbnail the user clicked as the single source of truth.
         # This guarantees that the selected image, the recorded area, and the
