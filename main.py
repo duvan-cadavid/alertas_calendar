@@ -36,8 +36,9 @@ def _cleanup_pid() -> None:
 
 
 _REQUIRED = [
-    ('groq',    'groq>=0.11.0'),
-    ('httpx',   'httpx'),
+    ('groq',     'groq>=0.11.0'),
+    ('httpx',    'httpx'),
+    ('markdown', 'markdown>=3.4'),
 ]
 
 

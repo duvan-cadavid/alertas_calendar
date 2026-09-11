@@ -19,6 +19,24 @@ class Appointment:
     calendar_id: int
     confirmed: bool = False
     assisted: bool = False
+    customer_id: int = 0
+
+
+@dataclass
+class Customer:
+    id: int
+    full_name: str
+    identification: str = ''
+    email: str = ''
+    phone: str = ''
+    cell: str = ''
+
+    def display_label(self) -> str:
+        bits = [self.full_name]
+        contact = self.identification or self.cell or self.phone or self.email
+        if contact:
+            bits.append(f'({contact})')
+        return '  '.join(bits)
 
 
 def _name_from_label(field) -> str:
@@ -49,6 +67,7 @@ def _fmt(dt: datetime) -> str:
 
 class GoujanaClient:
     _ENDPOINT = '/api/v1/schedule/appointment/'
+    _USER_ENDPOINT = '/api/v1/base_model_s/user/'
 
     def __init__(self, server_url: str, api_token: str, timezone: str = 'America/Bogota'):
         self.server_url = server_url.rstrip('/')
@@ -75,18 +94,20 @@ class GoujanaClient:
     def _build(self, item: dict) -> Appointment:
         service = _name_from_label(item.get('element')) or item.get('elements', '')
         cal = item.get('calendar') or {}
+        customer = item.get('customer') or {}
         return Appointment(
             id=item['id'],
             text=item.get('text') or 'Sin título',
             start_date=self._parse_dt(item.get('start_date', '')),
             end_date=self._parse_dt(item.get('end_date', '')),
-            customer_name=_name_from_label(item.get('customer')),
+            customer_name=_name_from_label(customer),
             service_name=service,
             observations=_strip_html(item.get('observations') or ''),
             professional_name=(item.get('calendar__user__full_name') or '').strip(),
             calendar_id=cal.get('id', 0) if isinstance(cal, dict) else 0,
             confirmed=bool(item.get('confirmed', False)),
             assisted=bool(item.get('assisted', False)),
+            customer_id=customer.get('id', 0) if isinstance(customer, dict) else 0,
         )
 
     def _fetch(self, params: dict) -> list:
@@ -160,3 +181,32 @@ class GoujanaClient:
         url = f'{self.server_url}{self._ENDPOINT}{appointment_id}/'
         resp = self._session.patch(url, json={'observations': observations}, timeout=15)
         resp.raise_for_status()
+
+    def search_customers(self, term: str, limit: int = 15) -> List['Customer']:
+        """Busca terceros marcados como cliente por identificación, celular, teléfono,
+        correo o nombre (todos cubiertos por ``q``, ver base_user_admin.search_fields)."""
+        term = (term or '').strip()
+        if not term:
+            return []
+        url = self.server_url + self._USER_ENDPOINT
+        params = {
+            'q': term,
+            'is_customer': 'True',
+            '_page_size': limit,
+            'fields': 'id,full_name,identification,email,phone,cell',
+        }
+        resp = self._session.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        rows = data.get('results', data) if isinstance(data, dict) else data
+        return [
+            Customer(
+                id=row['id'],
+                full_name=(row.get('full_name') or '').strip(),
+                identification=row.get('identification') or '',
+                email=row.get('email') or '',
+                phone=row.get('phone') or '',
+                cell=row.get('cell') or '',
+            )
+            for row in rows
+        ]

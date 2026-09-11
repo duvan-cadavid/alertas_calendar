@@ -50,6 +50,7 @@ QScrollBar::handle:vertical {
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QSplitter::handle { background: #313244; width: 2px; }
 QFrame#sep { background-color: #313244; }
+QLabel#pqr_status { font-size: 12px; }
 """
 
 
@@ -108,6 +109,13 @@ class RecordingResultsWindow(QWidget):
         header.addWidget(btn_open)
 
         root.addLayout(header)
+
+        self._pqr_status_lbl = QLabel('☁  Creando el PQR de la reunión…')
+        self._pqr_status_lbl.setObjectName('pqr_status')
+        self._pqr_status_lbl.setStyleSheet('color:#89b4fa;')
+        self._pqr_status_lbl.setWordWrap(True)
+        root.addWidget(self._pqr_status_lbl)
+
         root.addWidget(_sep())
 
         # ── Splitter: transcription | summary ─────────────────────
@@ -165,6 +173,11 @@ class RecordingResultsWindow(QWidget):
     def update_summary(self, text: str):
         """Called if summary finishes after the window is already open."""
         self._sum_edit.setPlainText(text)
+
+    def set_pqr_status(self, text: str, color: str = '#89b4fa'):
+        """Called by RecorderWindow while it creates the PQR in the background."""
+        self._pqr_status_lbl.setStyleSheet(f'color:{color};')
+        self._pqr_status_lbl.setText(text)
 
     def _open_video(self):
         if sys.platform == 'win32':

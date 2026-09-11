@@ -4,11 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-from PyQt6.QtCore import Qt, QRect, QTimer
+from PyQt6.QtCore import Qt, QRect, QTimer, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QCheckBox, QFrame, QSizePolicy, QScrollArea, QSlider,
-    QApplication,
+    QApplication, QLineEdit, QListWidget, QListWidgetItem,
 )
 
 from core.mic_volume import get_mic_volume, set_mic_volume
@@ -17,6 +17,8 @@ from config.settings import Config
 from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available, LOG_PATH
 from core.transcriber import TranscriberThread
 from core.summarizer import SummarizerThread
+from core.pqr_client import PQRClient, build_pqr_description
+from api.client import GoujanaClient, Customer, Appointment
 
 
 class ScreenThumbnailSelector(QWidget):
@@ -211,6 +213,62 @@ def _sep():
     return f
 
 
+class _CustomerSearchThread(QThread):
+    done = pyqtSignal(list)
+    fail = pyqtSignal(str)
+
+    def __init__(self, client: GoujanaClient, term: str, parent=None):
+        super().__init__(parent)
+        self._client = client
+        self._term = term
+
+    def run(self):
+        try:
+            self.done.emit(self._client.search_customers(self._term))
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
+class _TodayAppointmentsThread(QThread):
+    done = pyqtSignal(list)
+    fail = pyqtSignal(str)
+
+    def __init__(self, client: GoujanaClient, user_id: str, parent=None):
+        super().__init__(parent)
+        self._client = client
+        self._user_id = user_id
+
+    def run(self):
+        try:
+            self.done.emit(self._client.get_today_appointments(self._user_id))
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
+class _PQRCreationThread(QThread):
+    """Crea el PQR + comentario con la grabación adjunta (ver core/pqr_client.py)."""
+    done = pyqtSignal(int)
+    fail = pyqtSignal(str)
+
+    def __init__(self, pqr_client: PQRClient, customer_id: int, title: str,
+                 description_html: str, comment_text: str, attach_path: str, parent=None):
+        super().__init__(parent)
+        self._pqr = pqr_client
+        self._customer_id = customer_id
+        self._title = title
+        self._description = description_html
+        self._comment_text = comment_text
+        self._attach_path = attach_path
+
+    def run(self):
+        try:
+            pqr_id = self._pqr.create_pqr(self._customer_id, self._title, self._description)
+            self._pqr.add_comment(pqr_id, self._comment_text, attach_path=self._attach_path)
+            self.done.emit(pqr_id)
+        except Exception as e:
+            self.fail.emit(str(e))
+
+
 class RecorderWindow(QWidget):
 
     def __init__(self, config: Config, parent=None):
@@ -237,6 +295,13 @@ class RecorderWindow(QWidget):
         self._trans_done = False
         self._sum_done   = False
 
+        # ── Cliente (obligatorio: quien recibe el PQR de esta grabación) ──
+        self._selected_customer: Optional[Customer] = None
+        self._customer_search_thread: Optional[_CustomerSearchThread] = None
+        self._appts_thread: Optional[_TodayAppointmentsThread] = None
+        self._today_appts: List[Appointment] = []
+        self._pqr_thread: Optional[_PQRCreationThread] = None
+
         self._recorder.recording_started.connect(self._on_rec_started)
         self._recorder.paused.connect(self._on_rec_paused)
         self._recorder.resumed.connect(self._on_rec_resumed)
@@ -247,6 +312,7 @@ class RecorderWindow(QWidget):
         self._load_devices()
         self._refresh_config_summary()
         self._check_ffmpeg()
+        self._load_today_appointments()
 
     # ── Build UI ──────────────────────────────────────────────────
 
@@ -303,6 +369,10 @@ class RecorderWindow(QWidget):
 
         # ── Mic volume (always visible) ───────────────────────────
         layout.addWidget(self._build_volume_row())
+        layout.addWidget(_sep())
+
+        # ── Cliente (obligatorio) ───────────────────────────────────
+        layout.addWidget(self._build_customer_panel())
         layout.addWidget(_sep())
 
         # ── Status label ──────────────────────────────────────────
@@ -392,6 +462,142 @@ class RecorderWindow(QWidget):
         layout.addLayout(save_row)
 
         return panel
+
+    def _build_customer_panel(self) -> QWidget:
+        """Panel obligatorio para atar la grabación a un cliente del ERP.
+
+        El PQR que se crea al terminar la transcripción necesita un
+        ``customer`` id (base_model_s.User) — ver core/pqr_client.py. Vincular
+        una cita de hoy es solo un atajo opcional para rellenar la búsqueda
+        más rápido; seleccionar un cliente siempre es obligatorio antes de
+        poder iniciar la grabación (ver _on_start_clicked).
+        """
+        panel = QWidget()
+        panel.setStyleSheet(
+            'QWidget { background:#1e1e2e; border-radius:10px; border:1px solid #313244; }')
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(10)
+
+        layout.addWidget(self._lbl('CLIENTE  —  obligatorio, se usa para el PQR de la reunión',
+                                    '11px', '#6c7086'))
+
+        # Atajo opcional: cita de hoy
+        appt_row = QHBoxLayout()
+        appt_row.addWidget(self._lbl('Vincular a cita de hoy (opcional):', '12px'))
+        self._appt_combo = QComboBox()
+        self._appt_combo.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._appt_combo.addItem('Cargando citas de hoy…', None)
+        self._appt_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self._appt_combo.currentIndexChanged.connect(self._on_appt_combo_changed)
+        appt_row.addWidget(self._appt_combo)
+        layout.addLayout(appt_row)
+
+        # Búsqueda manual
+        search_row = QHBoxLayout()
+        self._customer_search_edit = QLineEdit()
+        self._customer_search_edit.setPlaceholderText('Identificación, celular o correo del cliente')
+        self._customer_search_edit.returnPressed.connect(self._on_customer_search_clicked)
+        search_row.addWidget(self._customer_search_edit)
+        btn_search = QPushButton('🔎  Buscar')
+        btn_search.setObjectName('btn_config')
+        btn_search.clicked.connect(self._on_customer_search_clicked)
+        search_row.addWidget(btn_search)
+        layout.addLayout(search_row)
+
+        self._customer_results = QListWidget()
+        self._customer_results.setFixedHeight(90)
+        self._customer_results.setStyleSheet(
+            'QListWidget { background:#181825; border:1px solid #313244; border-radius:6px; }'
+            'QListWidget::item { padding:4px 8px; }'
+            'QListWidget::item:selected { background:#313244; color:#89b4fa; }')
+        self._customer_results.itemClicked.connect(self._on_customer_picked)
+        layout.addWidget(self._customer_results)
+
+        self._customer_selected_lbl = QLabel('⚠  Ningún cliente seleccionado')
+        self._customer_selected_lbl.setStyleSheet('color:#fb923c; font-size:12px; font-weight:bold;')
+        self._customer_selected_lbl.setWordWrap(True)
+        layout.addWidget(self._customer_selected_lbl)
+
+        return panel
+
+    def _appointments_client(self) -> GoujanaClient:
+        return GoujanaClient(self._config.server_url, self._config.api_token, self._config.timezone)
+
+    def _load_today_appointments(self):
+        if self._appts_thread and self._appts_thread.isRunning():
+            return
+        self._appts_thread = _TodayAppointmentsThread(
+            self._appointments_client(), self._config.user_id, self)
+        self._appts_thread.done.connect(self._on_today_appts_done)
+        self._appts_thread.fail.connect(self._on_today_appts_fail)
+        self._appts_thread.start()
+
+    def _on_today_appts_done(self, appointments: List[Appointment]):
+        self._today_appts = appointments
+        self._appt_combo.blockSignals(True)
+        self._appt_combo.clear()
+        self._appt_combo.addItem('— Elegir cita de hoy —', None)
+        for appt in appointments:
+            label = f'{appt.start_date.strftime("%I:%M %p").lstrip("0")}  {appt.customer_name or appt.text}'
+            self._appt_combo.addItem(label, appt.id)
+        self._appt_combo.blockSignals(False)
+
+    def _on_today_appts_fail(self, msg: str):
+        self._appt_combo.clear()
+        self._appt_combo.addItem('No se pudieron cargar las citas de hoy', None)
+
+    def _on_appt_combo_changed(self, index: int):
+        appt_id = self._appt_combo.itemData(index)
+        if not appt_id:
+            return
+        appt = next((a for a in self._today_appts if a.id == appt_id), None)
+        if not appt:
+            return
+        if appt.customer_id:
+            self._selected_customer = Customer(id=appt.customer_id, full_name=appt.customer_name)
+            self._customer_selected_lbl.setText(f'✓  Cliente (de la cita): {appt.customer_name}')
+            self._customer_selected_lbl.setStyleSheet('color:#4ade80; font-size:12px; font-weight:bold;')
+        else:
+            # La cita no trae un customer_id resoluble — deja que la busque a mano.
+            self._customer_search_edit.setText(appt.customer_name)
+            self._on_customer_search_clicked()
+
+    def _on_customer_search_clicked(self):
+        term = self._customer_search_edit.text().strip()
+        if not term:
+            return
+        if self._customer_search_thread and self._customer_search_thread.isRunning():
+            return
+        self._customer_results.clear()
+        self._customer_results.addItem('Buscando…')
+        self._customer_search_thread = _CustomerSearchThread(
+            self._appointments_client(), term, self)
+        self._customer_search_thread.done.connect(self._on_customer_search_done)
+        self._customer_search_thread.fail.connect(self._on_customer_search_fail)
+        self._customer_search_thread.start()
+
+    def _on_customer_search_done(self, customers: List[Customer]):
+        self._customer_results.clear()
+        if not customers:
+            self._customer_results.addItem('Sin resultados. Verifica el dato o intenta otro campo.')
+            return
+        for c in customers:
+            item = QListWidgetItem(c.display_label())
+            item.setData(Qt.ItemDataRole.UserRole, c)
+            self._customer_results.addItem(item)
+
+    def _on_customer_search_fail(self, msg: str):
+        self._customer_results.clear()
+        self._customer_results.addItem(f'Error al buscar: {msg[:80]}')
+
+    def _on_customer_picked(self, item: QListWidgetItem):
+        customer = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(customer, Customer):
+            return
+        self._selected_customer = customer
+        self._customer_selected_lbl.setText(f'✓  Cliente seleccionado: {customer.display_label()}')
+        self._customer_selected_lbl.setStyleSheet('color:#4ade80; font-size:12px; font-weight:bold;')
 
     # ── Helpers ───────────────────────────────────────────────────
 
@@ -575,6 +781,11 @@ class RecorderWindow(QWidget):
         if not self._is_configured():
             self._set_status('⚠  Guarda la configuración de dispositivos primero.', '#fb923c')
             return
+        if not self._selected_customer:
+            self._set_status(
+                '⚠  Selecciona un cliente antes de grabar (vincula una cita o búscalo).',
+                '#fb923c')
+            return
 
         # Use the thumbnail the user clicked as the single source of truth.
         # This guarantees that the selected image, the recorded area, and the
@@ -728,6 +939,56 @@ class RecorderWindow(QWidget):
             self._results_win.update_summary(text)
         else:
             self._check_open_results()
+        self._create_pqr()
+
+    # ── PQR (crm_s.requestscomplaints) ──────────────────────────────
+
+    def _create_pqr(self):
+        """Crea el PQR de la reunión con resumen+transcripción y la grabación
+        adjunta en un comentario, ver core/pqr_client.py.
+
+        Requiere un cliente ya seleccionado (bloqueado en _on_start_clicked)
+        y una transcripción/resumen sin error.
+        """
+        if not self._selected_customer:
+            return  # no debería pasar: _on_start_clicked ya lo exige
+        if self._trans_text.startswith('Error en transcripción') or \
+                self._sum_text.startswith('Error al generar resumen'):
+            self._set_status('⚠  No se creó el PQR: hubo un error en la transcripción/resumen.',
+                             '#fb923c')
+            return
+        if self._pqr_thread and self._pqr_thread.isRunning():
+            return
+
+        customer = self._selected_customer
+        when = datetime.now().strftime('%Y-%m-%d %H:%M')
+        title = f'Acta de reunión — {customer.full_name} — {when}'
+        description = build_pqr_description(self._sum_text, self._trans_text)
+
+        pqr_client = PQRClient(self._config.server_url, self._config.api_token)
+        self._pqr_thread = _PQRCreationThread(
+            pqr_client, customer.id, title, description,
+            comment_text='Grabación completa de la reunión adjunta.',
+            attach_path=self._current_output, parent=self)
+        self._pqr_thread.done.connect(self._on_pqr_done)
+        self._pqr_thread.fail.connect(self._on_pqr_fail)
+        self._report_pqr_status('☁  Creando PQR de la reunión…', '#89b4fa')
+        self._pqr_thread.start()
+
+    def _report_pqr_status(self, text: str, color: str):
+        """El recorder suele estar oculto en este punto (ver _on_rec_finished):
+        si la ventana de resultados ya está abierta, es ahí donde el usuario
+        realmente lo va a ver."""
+        self._set_status(text, color)
+        if self._results_win and self._results_win.isVisible():
+            self._results_win.set_pqr_status(text, color)
+
+    def _on_pqr_done(self, pqr_id: int):
+        self._report_pqr_status(
+            f'✓  PQR #{pqr_id} creado con el resumen, la transcripción y la grabación.', '#4ade80')
+
+    def _on_pqr_fail(self, msg: str):
+        self._report_pqr_status(f'✗  No se pudo crear el PQR: {msg[:150]}', '#f38ba8')
 
     def _on_sum_error(self, msg: str):
         self._sum_text = f'Error al generar resumen:\n{msg}'
