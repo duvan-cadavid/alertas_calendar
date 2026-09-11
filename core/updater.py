@@ -1,3 +1,5 @@
+import sys
+
 import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -18,6 +20,15 @@ class UpdateChecker(QThread):
     check_done       = pyqtSignal()          # emitido siempre al terminar
 
     def run(self) -> None:
+        # GitHub Releases only ships a Windows .exe. On Linux there is
+        # nothing to auto-install — the app is updated via `git pull` (see
+        # install.sh) — so this used to download the .exe anyway, fail to
+        # open it with `xdg-open`, and then still self-quit 2s later
+        # (tray.py/dashboard_window.py _on_download_done), leaving the user
+        # with a window that opens and silently vanishes. Skip entirely.
+        if sys.platform != 'win32':
+            self.check_done.emit()
+            return
         try:
             resp = requests.get(
                 _API_URL,
