@@ -218,13 +218,34 @@ class GoujanaClient:
         """Crea una cita nueva. Al guardarse, `schedule`'s señal post_save la
         sincroniza sola a Google Calendar del profesional (con Meet si ese
         profesional tiene la integración activa) — Alertas no llama a Google
-        directamente, ver core/task_scheduler.py."""
+        directamente, ver core/task_scheduler.py.
+
+        Gotcha verificado en producción y en local (base_sofisis dev):
+        ``ApiSofisisView.perform_create`` no solo valida con el serializer
+        DRF (que acepta el string ISO combinado sin problema) — también
+        revalida con el FORMULARIO DEL ADMIN de Django
+        (``_validate_with_admin_form``, util_s/api_restful/api_view.py),
+        que para un ``DateTimeField`` usa el widget partido del admin
+        (``AdminSplitDateTime``): espera ``start_date_0`` (fecha) y
+        ``start_date_1`` (hora) por separado. Sin esas dos claves, el
+        formulario del admin ve el campo vacío y el POST completo falla con
+        "Este campo es requerido." en start_date/end_date, aunque el string
+        combinado sí venga en el payload. Se mandan ambas formas: el string
+        combinado (por si acaso lo necesita el serializer) y las partes
+        sueltas (que es lo que realmente exige la revalidación del admin).
+        """
         url = self.server_url + self._ENDPOINT
+        start_date_local = start_date.astimezone(self._tz) if start_date.tzinfo else start_date
+        end_date_local = end_date.astimezone(self._tz) if end_date.tzinfo else end_date
         payload = {
             'calendar': calendar_id,
             'customer': customer_id,
             'start_date': _fmt(start_date),
+            'start_date_0': start_date_local.strftime('%Y-%m-%d'),
+            'start_date_1': start_date_local.strftime('%H:%M:%S'),
             'end_date': _fmt(end_date),
+            'end_date_0': end_date_local.strftime('%Y-%m-%d'),
+            'end_date_1': end_date_local.strftime('%H:%M:%S'),
             'text': text,
             'observations': observations,
         }
