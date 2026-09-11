@@ -4,7 +4,7 @@ from datetime import datetime
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication
+from PyQt6.QtWidgets import QSystemTrayIcon, QMenu, QApplication, QMessageBox
 
 from api.client import Appointment, GoujanaClient
 from config.settings import Config
@@ -112,9 +112,24 @@ class TrayApp:
             self._recorder_window.raise_()
             self._recorder_window.activateWindow()
             return
-        from ui.recorder_window import RecorderWindow
-        self._recorder_window = RecorderWindow(self.config)
-        self._recorder_window.show()
+        try:
+            from ui.recorder_window import RecorderWindow
+            self._recorder_window = RecorderWindow(self.config)
+            self._recorder_window.show()
+        except Exception as e:
+            # Antes esto fallaba en silencio: un ImportError (típicamente la
+            # instalación quedó con una mezcla de archivos viejos/nuevos,
+            # ver build/setup.iss CloseApplications) tumbaba el import sin
+            # ningún aviso — el usuario veía "le doy clic en Grabar y no pasa
+            # nada". Al menos ahora hay un mensaje con algo accionable.
+            import logging
+            logging.getLogger('recorder').error('No se pudo abrir el grabador: %s', e, exc_info=True)
+            QMessageBox.critical(
+                None, 'No se pudo abrir el grabador',
+                f'Ocurrió un error al abrir la ventana de grabación:\n\n{e}\n\n'
+                'Prueba desinstalar y reinstalar la última versión desde GitHub Releases '
+                '(si el problema persiste tras reiniciar el PC), o usa "🛟 Reportar un problema" '
+                'en este mismo menú para avisarnos.')
 
     def show_settings(self):
         if self._settings_window and self._settings_window.isVisible():
