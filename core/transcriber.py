@@ -4,7 +4,7 @@ import sys
 import tempfile
 
 from PyQt6.QtCore import QThread, pyqtSignal
-from core.ai_config import GROQ_API_KEY
+from core.ai_config import get_groq_api_key
 from core.recorder import _get_ffmpeg_exe
 
 
@@ -27,7 +27,7 @@ class TranscriberThread(QThread):
     def __init__(self, media_path: str, parent=None):
         super().__init__(parent)
         self._path = media_path
-        self._api_key = GROQ_API_KEY
+        self._api_key = get_groq_api_key()
 
     def run(self):
         tmp_audio = None

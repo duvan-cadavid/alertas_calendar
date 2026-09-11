@@ -219,6 +219,24 @@ class SettingsWindow(QWidget):
         f3.addRow("Zona horaria:", self._timezone)
         form.addWidget(g3)
 
+        # Transcripción con IA
+        g_ai = QGroupBox("Transcripción con IA (Groq)")
+        f_ai = QFormLayout(g_ai)
+        f_ai.setSpacing(12)
+        f_ai.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._groq_key = QLineEdit(self.config.groq_api_key)
+        self._groq_key.setPlaceholderText("gsk_… (opcional, usa la clave por defecto si se deja vacío)")
+        self._groq_key.setEchoMode(QLineEdit.EchoMode.Password)
+        f_ai.addRow("Groq API Key:", self._groq_key)
+        ai_help = QLabel(
+            "Solo necesaria si la clave incluida en la aplicación deja de "
+            "funcionar. Consíguela gratis en console.groq.com."
+        )
+        ai_help.setObjectName("help")
+        ai_help.setWordWrap(True)
+        f_ai.addRow("", ai_help)
+        form.addWidget(g_ai)
+
         # Grabaciones
         g4 = QGroupBox("Grabaciones de pantalla")
         f4 = QFormLayout(g4)
@@ -300,6 +318,7 @@ class SettingsWindow(QWidget):
         self.config.minutes_before_warning = self._minutes.currentData()
         self.config.timezone               = self._timezone.currentData()
         self.config.recordings_folder      = self._rec_folder.text().strip() or self.config.recordings_folder
+        self.config.groq_api_key           = self._groq_key.text().strip()
         self.config.save()
         if self._on_save:
             self._on_save(self.config)

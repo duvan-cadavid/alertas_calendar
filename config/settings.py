@@ -9,6 +9,7 @@ _FIELDS = {
     'server_url', 'api_token', 'user_id', 'minutes_before_warning', 'timezone',
     'recordings_folder',
     'rec_screen_name', 'rec_mic_id', 'rec_sys_id',
+    'groq_api_key',
 }
 
 _DEFAULT_RECORDINGS = str(Path.home() / 'Videos' / 'goujana')
@@ -25,6 +26,7 @@ class Config:
     rec_screen_name: str = ''   # xrandr / QScreen name  e.g. "DP-0"
     rec_mic_id: str = ''        # PulseAudio source name or dshow device
     rec_sys_id: str = ''        # system audio device ID
+    groq_api_key: str = ''      # overrides the bundled/env Groq key when set
 
     def is_configured(self) -> bool:
         return bool(self.server_url and self.api_token and self.user_id)

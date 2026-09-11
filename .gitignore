@@ -15,6 +15,7 @@ build/__pycache__/
 # Credenciales y tokens OAuth (¡nunca subir al repo!)
 credentials.json
 token.json
+core/ai_config_local.py
 *.pickle
 client_secret*.json
 
