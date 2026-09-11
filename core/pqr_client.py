@@ -79,9 +79,16 @@ class PQRClient:
 
         ``attach_path`` va como multipart en el campo ``image`` (el nombre que
         usa el modelo Comment de este ERP para cualquier tipo de adjunto, no
-        solo imágenes — ver el docstring del módulo).
+        solo imágenes — ver el docstring del módulo). ``content_type_model``
+        debe ser el del modelo CONCRETO (nunca el de un proxy: un adjunto bajo
+        el ContentType de un proxy se crea sin error pero queda huérfano, no
+        aparece nunca en la ficha — gotcha verificado en
+        .claude/skills/causador_de_bancos_duvan_y_whatsapp/SKILL.md §3.2 del
+        proyecto hermano). ``RequestsComplaints`` no es proxy de nada
+        (verificado: ``_meta.proxy is False``), así que ``crm_s`` /
+        ``requestscomplaints`` es correcto tal cual.
         """
-        url = f'{self.server_url}{_COMMENT_ENDPOINT}'
+        url = f'{self.server_url}{_COMMENT_ENDPOINT}?_company={COMPANY}'
         data = {
             'content_type_app_label': 'crm_s',
             'content_type_model': 'requestscomplaints',

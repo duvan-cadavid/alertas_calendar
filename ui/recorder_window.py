@@ -296,11 +296,17 @@ class RecorderWindow(QWidget):
         self._sum_done   = False
 
         # ── Cliente (obligatorio: quien recibe el PQR de esta grabación) ──
+        # Se pide DESPUÉS de grabar, no antes: no debe interponerse entre el
+        # profesional y el botón de grabar. Si el resumen ya está listo y
+        # todavía no hay cliente, _create_pqr() se queda "pendiente" y
+        # _on_customer_picked()/_on_appt_combo_changed() lo disparan solos en
+        # cuanto se elige uno.
         self._selected_customer: Optional[Customer] = None
         self._customer_search_thread: Optional[_CustomerSearchThread] = None
         self._appts_thread: Optional[_TodayAppointmentsThread] = None
         self._today_appts: List[Appointment] = []
         self._pqr_thread: Optional[_PQRCreationThread] = None
+        self._pqr_pending = False   # resumen listo, esperando que se elija cliente
 
         self._recorder.recording_started.connect(self._on_rec_started)
         self._recorder.paused.connect(self._on_rec_paused)
@@ -464,13 +470,14 @@ class RecorderWindow(QWidget):
         return panel
 
     def _build_customer_panel(self) -> QWidget:
-        """Panel obligatorio para atar la grabación a un cliente del ERP.
+        """Panel para atar la grabación a un cliente del ERP.
 
         El PQR que se crea al terminar la transcripción necesita un
         ``customer`` id (base_model_s.User) — ver core/pqr_client.py. Vincular
         una cita de hoy es solo un atajo opcional para rellenar la búsqueda
-        más rápido; seleccionar un cliente siempre es obligatorio antes de
-        poder iniciar la grabación (ver _on_start_clicked).
+        más rápido. Elegir un cliente es obligatorio para que el PQR se cree,
+        pero se pide DESPUÉS de grabar (cuando el resumen ya está listo), no
+        antes — no bloquea el inicio de la grabación, ver _create_pqr().
         """
         panel = QWidget()
         panel.setStyleSheet(
@@ -479,8 +486,9 @@ class RecorderWindow(QWidget):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        layout.addWidget(self._lbl('CLIENTE  —  obligatorio, se usa para el PQR de la reunión',
-                                    '11px', '#6c7086'))
+        layout.addWidget(self._lbl(
+            'CLIENTE  —  se usa para el PQR de la reunión (se pide al terminar de grabar)',
+            '11px', '#6c7086'))
 
         # Atajo opcional: cita de hoy
         appt_row = QHBoxLayout()
@@ -558,6 +566,7 @@ class RecorderWindow(QWidget):
             self._selected_customer = Customer(id=appt.customer_id, full_name=appt.customer_name)
             self._customer_selected_lbl.setText(f'✓  Cliente (de la cita): {appt.customer_name}')
             self._customer_selected_lbl.setStyleSheet('color:#4ade80; font-size:12px; font-weight:bold;')
+            self._retry_pending_pqr()
         else:
             # La cita no trae un customer_id resoluble — deja que la busque a mano.
             self._customer_search_edit.setText(appt.customer_name)
@@ -598,6 +607,14 @@ class RecorderWindow(QWidget):
         self._selected_customer = customer
         self._customer_selected_lbl.setText(f'✓  Cliente seleccionado: {customer.display_label()}')
         self._customer_selected_lbl.setStyleSheet('color:#4ade80; font-size:12px; font-weight:bold;')
+        self._retry_pending_pqr()
+
+    def _retry_pending_pqr(self):
+        """El resumen ya estaba listo cuando se pidió el cliente — ahora que
+        hay uno, dispara la creación del PQR que quedó en espera."""
+        if self._pqr_pending:
+            self._pqr_pending = False
+            self._create_pqr()
 
     # ── Helpers ───────────────────────────────────────────────────
 
@@ -781,11 +798,6 @@ class RecorderWindow(QWidget):
         if not self._is_configured():
             self._set_status('⚠  Guarda la configuración de dispositivos primero.', '#fb923c')
             return
-        if not self._selected_customer:
-            self._set_status(
-                '⚠  Selecciona un cliente antes de grabar (vincula una cita o búscalo).',
-                '#fb923c')
-            return
 
         # Use the thumbnail the user clicked as the single source of truth.
         # This guarantees that the selected image, the recorded area, and the
@@ -951,7 +963,19 @@ class RecorderWindow(QWidget):
         y una transcripción/resumen sin error.
         """
         if not self._selected_customer:
-            return  # no debería pasar: _on_start_clicked ya lo exige
+            # Se pide DESPUÉS de grabar, no antes de empezar. Deja la creación
+            # del PQR en espera y trae la ventana al frente (normalmente está
+            # oculta desde que arrancó la grabación, ver _on_rec_started) para
+            # que el profesional elija el cliente — _on_customer_picked/
+            # _on_appt_combo_changed reintentan solos en cuanto lo haga.
+            self._pqr_pending = True
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self._set_status(
+                '⚠  Elige el cliente de esta reunión para crear el PQR (arriba, sección Cliente).',
+                '#fb923c')
+            return
         if self._trans_text.startswith('Error en transcripción') or \
                 self._sum_text.startswith('Error al generar resumen'):
             self._set_status('⚠  No se creó el PQR: hubo un error en la transcripción/resumen.',
