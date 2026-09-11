@@ -68,6 +68,7 @@ def _fmt(dt: datetime) -> str:
 class GoujanaClient:
     _ENDPOINT = '/api/v1/schedule/appointment/'
     _USER_ENDPOINT = '/api/v1/base_model_s/user/'
+    _CALENDAR_ENDPOINT = '/api/v1/schedule/calendar/'
 
     def __init__(self, server_url: str, api_token: str, timezone: str = 'America/Bogota'):
         self.server_url = server_url.rstrip('/')
@@ -80,6 +81,10 @@ class GoujanaClient:
         self._session.verify = False
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    @property
+    def tz(self) -> ZoneInfo:
+        return self._tz
 
     def _parse_dt(self, value: str) -> datetime:
         """Parsea fecha del API. El servidor devuelve hora local sin zona — se adjunta la zona configurada."""
@@ -181,6 +186,51 @@ class GoujanaClient:
         url = f'{self.server_url}{self._ENDPOINT}{appointment_id}/'
         resp = self._session.patch(url, json={'observations': observations}, timeout=15)
         resp.raise_for_status()
+
+    def get_calendar_id(self, user_id: str) -> int:
+        """Id del `schedule.calendar` del profesional — lo pide crear una cita
+        (campo obligatorio, sin default utilizable desde la API con token)."""
+        url = self.server_url + self._CALENDAR_ENDPOINT
+        params = {'user': user_id, 'active': 'True', '_page_size': 1, 'fields': 'id'}
+        resp = self._session.get(url, params=params, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        rows = data.get('results', data) if isinstance(data, dict) else data
+        if not rows:
+            raise ValueError(f'No se encontró un calendario activo para el usuario {user_id}.')
+        return rows[0]['id']
+
+    def get_appointments_range(self, user_id: str, start: datetime, end: datetime) -> List[Appointment]:
+        """Citas del profesional entre start y end (naive, hora local) — usado
+        para calcular huecos libres en la agenda al agendar tareas."""
+        params = {
+            'calendar__user': user_id,
+            'start_date__gte': _fmt(start),
+            'start_date__lte': _fmt(end),
+            '_ordering': 'start_date',
+            '_page_size': 500,
+        }
+        raw = self._fetch(params)
+        return [self._build(i) for i in raw]
+
+    def create_appointment(self, calendar_id: int, customer_id: int, start_date: datetime,
+                           end_date: datetime, text: str, observations: str = '') -> int:
+        """Crea una cita nueva. Al guardarse, `schedule`'s señal post_save la
+        sincroniza sola a Google Calendar del profesional (con Meet si ese
+        profesional tiene la integración activa) — Alertas no llama a Google
+        directamente, ver core/task_scheduler.py."""
+        url = self.server_url + self._ENDPOINT
+        payload = {
+            'calendar': calendar_id,
+            'customer': customer_id,
+            'start_date': _fmt(start_date),
+            'end_date': _fmt(end_date),
+            'text': text,
+            'observations': observations,
+        }
+        resp = self._session.post(url, json=payload, timeout=30)
+        resp.raise_for_status()
+        return resp.json()['id']
 
     def search_customers(self, term: str, limit: int = 15) -> List['Customer']:
         """Busca terceros marcados como cliente por identificación, celular, teléfono,

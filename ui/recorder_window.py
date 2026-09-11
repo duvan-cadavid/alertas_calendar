@@ -18,6 +18,8 @@ from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_dev
 from core.transcriber import TranscriberThread
 from core.summarizer import SummarizerThread
 from core.pqr_client import PQRClient, build_pqr_description
+from core.task_extractor import TaskExtractorThread
+from core.task_scheduler import TaskSchedulerThread
 from api.client import GoujanaClient, Customer, Appointment
 
 
@@ -307,6 +309,11 @@ class RecorderWindow(QWidget):
         self._today_appts: List[Appointment] = []
         self._pqr_thread: Optional[_PQRCreationThread] = None
         self._pqr_pending = False   # resumen listo, esperando que se elija cliente
+        self._pqr_id: Optional[int] = None
+
+        # ── Tareas resultantes (propuestas por IA, el asesor confirma) ──
+        self._task_extractor_thread: Optional[TaskExtractorThread] = None
+        self._task_scheduler_thread: Optional[TaskSchedulerThread] = None
 
         self._recorder.recording_started.connect(self._on_rec_started)
         self._recorder.paused.connect(self._on_rec_paused)
@@ -975,6 +982,76 @@ class RecorderWindow(QWidget):
         else:
             self._check_open_results()
         self._create_pqr()
+        self._start_task_extraction(text)
+
+    # ── Tareas resultantes (core/task_extractor.py + core/task_scheduler.py) ──
+
+    def _start_task_extraction(self, summary_text: str):
+        if self._task_extractor_thread and self._task_extractor_thread.isRunning():
+            return
+        self._task_extractor_thread = TaskExtractorThread(summary_text, self)
+        self._task_extractor_thread.done.connect(self._on_tasks_extracted)
+        self._task_extractor_thread.error.connect(self._on_tasks_extraction_failed)
+        self._task_extractor_thread.start()
+
+    def _on_tasks_extracted(self, tasks: list):
+        if self._results_win:
+            self._results_win.set_tasks(tasks)
+
+    def _on_tasks_extraction_failed(self, msg: str):
+        if self._results_win:
+            self._results_win.set_tasks_error(msg)
+
+    def _on_schedule_tasks_requested(self, tasks: list):
+        """El asesor ya revisó y confirmó estas tareas en la ventana de
+        resultados (_TaskRow) — acá se busca hueco real en su agenda de los
+        próximos días y se crea la cita, ver core/task_scheduler.py."""
+        if not self._selected_customer:
+            if self._results_win:
+                self._results_win.set_scheduling_status(
+                    '⚠  Elige primero el cliente de esta reunión (sección Cliente, arriba).',
+                    '#fb923c')
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
+        if self._task_scheduler_thread and self._task_scheduler_thread.isRunning():
+            return
+
+        client = GoujanaClient(self._config.server_url, self._config.api_token, self._config.timezone)
+        try:
+            calendar_id = client.get_calendar_id(self._config.user_id)
+        except Exception as e:
+            if self._results_win:
+                self._results_win.set_scheduling_status(
+                    f'✗  No se pudo obtener tu calendario: {e}', '#f38ba8')
+            return
+
+        self._task_scheduler_thread = TaskSchedulerThread(
+            client, self._config.user_id, calendar_id, self._selected_customer.id,
+            tasks, pqr_id=self._pqr_id, parent=self)
+        self._task_scheduler_thread.progress.connect(self._on_task_schedule_progress)
+        self._task_scheduler_thread.task_scheduled.connect(self._on_task_scheduled)
+        self._task_scheduler_thread.task_failed.connect(self._on_task_schedule_failed)
+        self._task_scheduler_thread.done.connect(self._on_tasks_scheduling_done)
+        self._task_scheduler_thread.start()
+
+    def _on_task_schedule_progress(self, msg: str):
+        if self._results_win:
+            self._results_win.set_scheduling_status(msg, '#89b4fa')
+
+    def _on_task_scheduled(self, task: dict):
+        if self._results_win:
+            self._results_win.mark_task_scheduled(
+                task['_row_index'], task['start'], task['end'], task['appointment_id'])
+
+    def _on_task_schedule_failed(self, task: dict, msg: str):
+        if self._results_win:
+            self._results_win.mark_task_failed(task['_row_index'], msg)
+
+    def _on_tasks_scheduling_done(self):
+        if self._results_win:
+            self._results_win.set_scheduling_status('✓  Listo.', '#4ade80')
 
     # ── PQR (crm_s.requestscomplaints) ──────────────────────────────
 
@@ -1031,6 +1108,7 @@ class RecorderWindow(QWidget):
             self._results_win.set_pqr_status(text, color)
 
     def _on_pqr_done(self, pqr_id: int):
+        self._pqr_id = pqr_id
         self._report_pqr_status(
             f'✓  PQR #{pqr_id} creado con el resumen, la transcripción y la grabación.', '#4ade80')
 
@@ -1057,6 +1135,7 @@ class RecorderWindow(QWidget):
             self._trans_text,
             self._sum_text or 'Generando resumen…',
         )
+        self._results_win.schedule_tasks_requested.connect(self._on_schedule_tasks_requested)
         self._results_win.show()
 
     def _open_log(self):
