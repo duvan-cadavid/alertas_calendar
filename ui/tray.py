@@ -288,7 +288,16 @@ class TrayApp:
             return
         self._update_checker = UpdateChecker()
         self._update_checker.update_available.connect(self._on_update_available)
+        self._update_checker.check_failed.connect(self._on_update_check_failed)
         self._update_checker.start()
+
+    def _on_update_check_failed(self, msg: str) -> None:
+        # Verificación automática en segundo plano (cada 6h + una a los 15s
+        # de arrancar): no interrumpe con un diálogo, pero antes esto se
+        # tragaba la excepción entera y no quedaba ni rastro de por qué el
+        # usuario seguía viendo una versión vieja — ver core/updater.py.
+        import logging
+        logging.getLogger('recorder').warning('Verificación de actualización falló: %s', msg)
 
     def _on_update_available(self, version: str, url: str) -> None:
         self._update_url = url

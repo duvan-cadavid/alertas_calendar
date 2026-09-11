@@ -267,6 +267,7 @@ class DashboardWindow(QWidget):
         self._update_checker: UpdateChecker | None = None
         self._downloader: InstallerDownloader | None = None
         self._update_url: str = ""
+        self._check_failed_msg: str = ""
         self._update_btn: QPushButton | None = None
         # IDs confirmed in this session — applied on every grid rebuild so a
         # slow server propagation or a 60-s refresh doesn't revert the button.
@@ -390,8 +391,10 @@ class DashboardWindow(QWidget):
         if self._update_checker and self._update_checker.isRunning():
             return
         self._subtitle.setText('Verificando actualizaciones…')
+        self._check_failed_msg = ''
         self._update_checker = UpdateChecker()
         self._update_checker.update_available.connect(self._on_update_found)
+        self._update_checker.check_failed.connect(self._on_check_failed)
         self._update_checker.check_done.connect(self._on_check_done)
         self._update_checker.start()
 
@@ -402,8 +405,18 @@ class DashboardWindow(QWidget):
         self._update_btn.setObjectName('bar_btn_update_ready')
         self._update_btn.setStyleSheet('')   # force Qt to re-evaluate the object name
 
+    def _on_check_failed(self, msg: str) -> None:
+        # No confundir con "no hay actualización" — la verificación en sí no
+        # se pudo completar (red, GitHub rate-limit, etc.). Antes esto se
+        # tragaba en silencio y _on_check_done mostraba igual "✓ Versión
+        # actualizada", indistinguible de estar realmente al día.
+        self._check_failed_msg = msg
+
     def _on_check_done(self) -> None:
         if self._update_url:
+            return
+        if self._check_failed_msg:
+            self._subtitle.setText(f'⚠  {self._check_failed_msg[:80]}')
             return
         self._subtitle.setText('✓  Versión actualizada')
         QTimer.singleShot(3_000, self._load)
