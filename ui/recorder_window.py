@@ -930,6 +930,7 @@ class RecorderWindow(QWidget):
 
     def _start_transcription(self, path: str):
         self._transcriber = TranscriberThread(path, self)
+        self._transcriber.progress.connect(lambda msg: self._set_status(msg, '#89b4fa'))
         self._transcriber.done.connect(self._on_trans_done)
         self._transcriber.error.connect(self._on_trans_error)
         self._transcriber.start()
@@ -953,6 +954,7 @@ class RecorderWindow(QWidget):
 
     def _start_summary(self, transcription: str):
         self._summarizer = SummarizerThread(transcription, self)
+        self._summarizer.progress.connect(lambda msg: self._set_status(msg, '#89b4fa'))
         self._summarizer.done.connect(self._on_sum_done)
         self._summarizer.error.connect(self._on_sum_error)
         self._summarizer.start()
