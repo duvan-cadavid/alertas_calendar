@@ -37,6 +37,8 @@ class TrayApp:
         self._bug_report_thread = None
         self._recording_prompt = None
         self._rec_prompt_timer: QTimer | None = None
+        self._support_test_window = None
+        self._support_test_action = None
         self._update_timer = QTimer()
         self._update_timer.timeout.connect(self._start_update_check)
         self._update_timer.start(6 * 3600 * 1_000)  # re-verificar cada 6 horas
@@ -66,6 +68,14 @@ class TrayApp:
         self._update_action.setVisible(False)
         menu.addSeparator()
         menu.addAction("🛟  Reportar un problema",    self._report_problem)
+        menu.addSeparator()
+        # Opción oculta de testing (no en Configuración): permite alternar al
+        # modo soporte técnico sin depender de un link goujanareporte:// real,
+        # para poder probarlo durante desarrollo — ver ui/support_window.py
+        # (test_mode) y README.md § "Probar sin un link real".
+        self._support_test_action = menu.addAction("🧪  Modo soporte técnico (prueba)")
+        self._support_test_action.setCheckable(True)
+        self._support_test_action.toggled.connect(self._toggle_support_test_mode)
         menu.addSeparator()
         import sys
         if sys.platform == 'win32':
@@ -316,6 +326,31 @@ class TrayApp:
         # usuario seguía viendo una versión vieja — ver core/updater.py.
         import logging
         logging.getLogger('recorder').warning('Verificación de actualización falló: %s', msg)
+
+    # ── Modo soporte técnico (prueba/dev) ─────────────────────────────
+    def _toggle_support_test_mode(self, checked: bool) -> None:
+        """"Modo usuario" <-> "Modo soporte técnico (prueba)" desde el tray,
+        sin necesitar un link goujanareporte:// real — ver
+        ui/support_window.py (test_mode=True): token/server quedan editables
+        ahí mismo porque no vienen de ningún link."""
+        if checked:
+            if self._support_test_window is not None:
+                return
+            from ui.support_window import SupportWindow
+            server = self.config.server_url if self.config.is_configured() else ''
+            self._support_test_window = SupportWindow(
+                server, '', self._app, test_mode=True)
+            self._support_test_window.destroyed.connect(self._on_support_test_window_closed)
+            self._support_test_window.show()
+        else:
+            if self._support_test_window is not None:
+                self._support_test_window.close()
+                self._support_test_window = None
+
+    def _on_support_test_window_closed(self) -> None:
+        self._support_test_window = None
+        if self._support_test_action is not None:
+            self._support_test_action.setChecked(False)
 
     # ── Reportar un problema ─────────────────────────────────────────
     def _report_problem(self) -> None:
