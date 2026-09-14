@@ -96,11 +96,19 @@ def submit_report(server: str, token: str, title: str, description: str,
 class SupportWindow(QWidget):
     """Ventana minimalista del modo soporte: grabar → describir → enviar."""
 
-    def __init__(self, server: str, token: str, app: QApplication, parent=None):
+    def __init__(self, server: str, token: str, app: QApplication, parent=None,
+                 test_mode: bool = False):
+        """``test_mode=True`` es el modo desarrollador (ver TrayApp): se abre
+        desde el menú de la bandeja sin un link ``goujanareporte://`` real, así
+        que no hay token/server válidos todavía — se muestran editables para
+        pegarlos a mano y "Enviar" queda deshabilitado hasta llenarlos. Con un
+        link real (``test_mode=False``, el caso normal) esos campos ni
+        aparecen: token/server ya vienen correctos en la URL."""
         super().__init__(parent)
         self._server = server
         self._token = token
         self._app = app
+        self._test_mode = test_mode
         self._recorder = ScreenRecorder(self)
         self._recording_path: Optional[str] = None
         self._submit_thread: Optional[ReportSubmitThread] = None
@@ -115,6 +123,28 @@ class SupportWindow(QWidget):
         title = QLabel('Reportar un problema')
         title.setStyleSheet('font-size: 16px; font-weight: bold;')
         layout.addWidget(title)
+
+        self._server_edit: Optional[QLineEdit] = None
+        self._token_edit: Optional[QLineEdit] = None
+        if self._test_mode:
+            dev_banner = QLabel('⚠ Modo de prueba — sin link real, pega un token/server válidos.')
+            dev_banner.setStyleSheet('color: #b45309; font-weight: bold;')
+            dev_banner.setWordWrap(True)
+            layout.addWidget(dev_banner)
+
+            server_label = QLabel('Server (URL base del tenant):')
+            layout.addWidget(server_label)
+            self._server_edit = QLineEdit(self._server)
+            self._server_edit.setPlaceholderText('https://ejemplo.goujana.co')
+            self._server_edit.textChanged.connect(self._on_dev_fields_changed)
+            layout.addWidget(self._server_edit)
+
+            token_label = QLabel('Token de prueba:')
+            layout.addWidget(token_label)
+            self._token_edit = QLineEdit(self._token)
+            self._token_edit.setPlaceholderText('Pega aquí un token válido de report_issue.start')
+            self._token_edit.textChanged.connect(self._on_dev_fields_changed)
+            layout.addWidget(self._token_edit)
 
         self._status_label = QLabel('Listo para grabar.')
         layout.addWidget(self._status_label)
@@ -148,7 +178,27 @@ class SupportWindow(QWidget):
                 'FFmpeg no está disponible — no se puede grabar, pero '
                 'igual puedes enviar una descripción del problema.')
             self._record_btn.setEnabled(False)
-            self._send_btn.setEnabled(True)
+            self._send_btn.setEnabled(not self._test_mode)
+
+        if self._test_mode:
+            # Sin token/server válidos todavía — no dejar enviar hasta pegarlos.
+            self._send_btn.setEnabled(False)
+
+    # ── Modo prueba (dev) ────────────────────────────────────────────
+
+    def _on_dev_fields_changed(self):
+        self._server = self._server_edit.text().strip()
+        self._token = self._token_edit.text().strip()
+        has_creds = bool(self._server) and bool(self._token)
+        can_record = ffmpeg_available()
+        self._send_btn.setEnabled(has_creds and (bool(self._recording_path) or True))
+        if not has_creds:
+            self._send_btn.setEnabled(False)
+            self._status_label.setText('Pega un token y un server de prueba válidos para poder enviar.')
+        else:
+            self._status_label.setText(
+                'Listo para grabar.' if can_record else
+                'FFmpeg no está disponible — igual puedes enviar una descripción.')
 
     # ── Grabación ─────────────────────────────────────────────────
 
@@ -187,6 +237,11 @@ class SupportWindow(QWidget):
     # ── Envío ─────────────────────────────────────────────────────
 
     def _send_report(self):
+        if self._test_mode and not (self._server and self._token):
+            QMessageBox.warning(self, 'Faltan credenciales de prueba',
+                                 'Pega un token y un server de prueba válidos antes de enviar.')
+            return
+
         description = self._description_edit.toPlainText().strip()
         if not description and not self._recording_path:
             QMessageBox.warning(self, 'Reporte vacío',

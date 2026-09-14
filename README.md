@@ -65,3 +65,25 @@ Esto **actualiza** el PQR que `start` ya creó; nunca crea uno nuevo.
 Ver `ui/support_window.py` (`submit_report()` para el POST aislado de Qt,
 `SupportWindow` para la ventana) y `main.py` (`parse_support_launch`,
 `_run_support_mode`).
+
+### Probar sin un link real (modo desarrollador)
+
+Para no depender de generar un link `goujanareporte://` real (que exige un
+ERP corriendo y una sesión logueada) hay un toggle oculto en el **menú de
+clic derecho del ícono de la bandeja** — no está en "⚙ Configuración",
+solo ahí: **"🧪 Modo soporte técnico (prueba)"** (checkbox).
+
+- Al marcarlo, abre `SupportWindow` directamente (`test_mode=True`), sin
+  pasar por `parse_support_launch()` ni por ningún link. Como en este caso
+  no hay `token`/`server` reales, la propia ventana muestra dos campos de
+  texto editables ("Server" y "Token de prueba") que en el modo normal
+  (lanzado por el link real) **no aparecen** — ahí token/server ya vienen
+  correctos en la URL y no hace falta ni tiene sentido editarlos.
+- El botón "Enviar reporte" queda deshabilitado hasta que ambos campos
+  tengan contenido, para que sea evidente que ese envío no llegará a ningún
+  lado sin un token real emitido por `crm_s.report_issue.start`.
+- Al desmarcar el checkbox ("Modo usuario"), cierra `SupportWindow` si está
+  abierta — no hace falta reiniciar la app para volver a la agenda normal.
+
+Ver `TrayApp._toggle_support_test_mode()` en `ui/tray.py` y el parámetro
+`test_mode` de `SupportWindow` en `ui/support_window.py`.
