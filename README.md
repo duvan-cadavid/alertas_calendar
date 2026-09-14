@@ -87,3 +87,35 @@ solo ahí: **"🧪 Modo soporte técnico (prueba)"** (checkbox).
 
 Ver `TrayApp._toggle_support_test_mode()` en `ui/tray.py` y el parámetro
 `test_mode` de `SupportWindow` en `ui/support_window.py`.
+
+### Compilar el `.exe` de esta rama vía CI (build manual, NO automático)
+
+El pipeline de `.github/workflows/release.yml` (PyInstaller + `build/alertas.spec`
++ Inno Setup `build/setup.iss`) compila el instalador completo, incluyendo
+`ui/support_window.py` y el registro del protocolo `goujanareporte://` — no
+requiere ningún cambio en `alertas.spec` porque `support_window.py` es un
+módulo Python normal (sin datos ni imports dinámicos) que PyInstaller detecta
+por análisis estático al seguir el `import` desde `main.py`/`ui/tray.py`; el
+registro `[Registry]` de `goujanareporte` vive en `setup.iss` y lo compila
+Inno Setup en el mismo paso de siempre, sin relación con PyInstaller.
+
+El workflow ya tenía (desde antes de este cambio) un trigger
+`workflow_dispatch` además del de `push: tags: v*`, así que para compilar
+esta rama de prueba **sin** necesitar un tag ni un push a la rama principal:
+
+1. En GitHub → pestaña **Actions** → workflow **"Build & Release Windows"**.
+2. Botón **"Run workflow"**.
+3. En el selector de rama, elegir `feature/support-mode` (en vez de la rama
+   por defecto).
+4. Completar el input `version` (ej. `1.3.0-support-test`) y confirmar.
+
+Esto **no se ejecuta solo**: es una acción manual que debe disparar el dueño
+del repo desde la UI de GitHub Actions cuando decida probar/publicar este
+modo soporte. Un push normal a `feature/support-mode` no dispara el
+workflow (el `push` trigger solo escucha tags `v*`), y correrlo a mano sigue
+publicando un GitHub Release con el `.exe` resultante (igual que en
+`main`) — solo que apuntado a esta rama, bajo control explícito del dueño.
+
+Nota de esta sesión: este build **no se ejecutó ni se publicó**; solo se
+revisó `release.yml`/`alertas.spec` por lectura y se documentó cómo
+dispararlo manualmente el día que se decida.
