@@ -12,6 +12,9 @@
 ; Si vendor\ no existe, el instalador se compila sin Meetily.
 #define MeetilyVersion "0.4.0"
 #define MeetilySetup   "meetily_" + MeetilyVersion + "_x64-setup.exe"
+; Esquema de protocolo del "modo soporte técnico" (goujanareporte://…) — ver
+; la sección [Registry] más abajo y main.py:parse_support_launch.
+#define SupportProtocol "goujanareporte"
 
 [Setup]
 AppId={#AppId}
@@ -65,6 +68,17 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desk
 [Registry]
 ; Autostart obligatorio — inicia con Windows en cualquier sesión del usuario
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AppName}"; ValueData: """{app}\{#AppExeName}"""; Flags: uninsdeletevalue
+
+; Esquema de protocolo goujanareporte:// — el navegador lo usa para lanzar el
+; "modo soporte técnico" (ver main.py:parse_support_launch / ui/support_window.py)
+; sin login: goujanareporte://start?token=<token>&server=<url_base_del_tenant>.
+; Windows invoca el exe pasando la URL completa como argv[1]; "%1" en el
+; comando abajo es justamente eso. HKCU (no HKLM) porque el instalador ya
+; escribe el autostart ahí y no requiere privilegios elevados adicionales.
+Root: HKCU; Subkey: "Software\Classes\{#SupportProtocol}"; ValueType: string; ValueName: ""; ValueData: "URL:Goujana Reporte de soporte"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\{#SupportProtocol}"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\{#SupportProtocol}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"""
+Root: HKCU; Subkey: "Software\Classes\{#SupportProtocol}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
 ; Instalación silenciosa de Meetily (instalador NSIS de Tauri: flag /S)

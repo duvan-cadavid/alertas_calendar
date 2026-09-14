@@ -3,14 +3,42 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
+from urllib.parse import urlparse, parse_qs
 
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication, QMessageBox
+
+# Esquema de protocolo del "modo soporte técnico": el navegador lo invoca como
+# goujanareporte://start?token=<token>&server=<url_base_del_tenant> (registrado
+# en build/setup.iss, sección [Registry]). Windows pasa la URL completa como
+# argv[1] al abrir la app; ver parse_support_launch() y ui/support_window.py.
+SUPPORT_PROTOCOL = 'goujanareporte'
 
 
 def _app_icon() -> QIcon:
     base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     return QIcon(os.path.join(base, 'assets', 'icon.ico'))
+
+
+def parse_support_launch(argv) -> Optional[Tuple[str, str]]:
+    """Si algún argumento es un link goujanareporte://, devuelve (token, server).
+
+    Devuelve None si no se lanzó en modo soporte, o si el link llegó
+    incompleto (falta token o server) — en ese caso el caller debe tratarlo
+    como lanzamiento normal en vez de intentar un modo soporte a medias.
+    """
+    for arg in argv[1:]:
+        if not isinstance(arg, str) or not arg.startswith(f'{SUPPORT_PROTOCOL}://'):
+            continue
+        parsed = urlparse(arg)
+        qs = parse_qs(parsed.query)
+        token = (qs.get('token') or [''])[0]
+        server = (qs.get('server') or [''])[0]
+        if token and server:
+            return token, server
+        return None
+    return None
 
 PID_FILE = Path.home() / '.alertas_calendario' / 'alertas.pid'
 
@@ -98,17 +126,40 @@ def _ensure_dependencies(app: QApplication) -> None:
         )
 
 
+def _run_support_mode(app: QApplication, token: str, server: str) -> int:
+    """Modo soporte técnico: ventana minimalista, sin login, sin agenda/CRM.
+
+    No usa el single-instance lock ni el PID file de la app normal — es un
+    proceso corto e independiente (puede coexistir con la app de agenda ya
+    corriendo en la bandeja) y no debe quedar bloqueado por ella ni bloquearla.
+    """
+    from ui.support_window import SupportWindow
+
+    app.setQuitOnLastWindowClosed(True)
+    window = SupportWindow(server, token, app)
+    window.show()
+    return app.exec()
+
+
 def main():
     from core import crash_log
     crash_log.install()
 
-    _check_single_instance()
-    _write_pid()
+    support_launch = parse_support_launch(sys.argv)
 
     app = QApplication(sys.argv)
     app.setApplicationName("Goujana Agenda")
     app.setApplicationDisplayName("Goujana Agenda")
     app.setWindowIcon(_app_icon())
+
+    if support_launch is not None:
+        token, server = support_launch
+        exit_code = _run_support_mode(app, token, server)
+        sys.exit(exit_code)
+
+    _check_single_instance()
+    _write_pid()
+
     app.setQuitOnLastWindowClosed(False)
     _ensure_dependencies(app)
 
