@@ -63,8 +63,15 @@ class PQRClient:
 
     def create_pqr(self, customer_id: int, title: str, description_html: str,
                     concept: int = CONCEPT_ACTA_REUNION, priority: str = PRIORITY_MEDIA,
-                    state: str = STATE_CLOSED) -> int:
-        """Crea el PQR y devuelve su id."""
+                    state: str = STATE_CLOSED, causing_by: int = None) -> int:
+        """Crea el PQR y devuelve su id.
+
+        ``causing_by`` ("Causado por" en crm_s.RequestsComplaints) es el
+        responsable del PQR — el campo que dispara el correo de notificación
+        cuando el ticket cambia (ver crm_s/admin.py,
+        send_email_to_causing_by_on_change_ticket). Para las actas de
+        reunión que crea esta app, el responsable es el dueño del calendario
+        (el asesor que grabó), no el cliente."""
         from datetime import date
         today = date.today().isoformat()
         payload = {
@@ -79,6 +86,8 @@ class PQRClient:
             'title': title,
             'description': description_html,
         }
+        if causing_by:
+            payload['causing_by'] = causing_by
         url = f'{self.server_url}{_PQR_ENDPOINT}?_company={COMPANY}'  # gotcha 1
         resp = self._session.post(url, json=payload, timeout=60)
         resp.raise_for_status()

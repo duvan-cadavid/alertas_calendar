@@ -253,7 +253,8 @@ class _PQRCreationThread(QThread):
     fail = pyqtSignal(str)
 
     def __init__(self, pqr_client: PQRClient, customer_id: int, title: str,
-                 description_html: str, comment_text: str, attach_path: str, parent=None):
+                 description_html: str, comment_text: str, attach_path: str,
+                 causing_by: int = None, parent=None):
         super().__init__(parent)
         self._pqr = pqr_client
         self._customer_id = customer_id
@@ -261,10 +262,12 @@ class _PQRCreationThread(QThread):
         self._description = description_html
         self._comment_text = comment_text
         self._attach_path = attach_path
+        self._causing_by = causing_by
 
     def run(self):
         try:
-            pqr_id = self._pqr.create_pqr(self._customer_id, self._title, self._description)
+            pqr_id = self._pqr.create_pqr(self._customer_id, self._title, self._description,
+                                          causing_by=self._causing_by)
             self._pqr.add_comment(pqr_id, self._comment_text, attach_path=self._attach_path)
             self.done.emit(pqr_id)
         except Exception as e:
@@ -1093,7 +1096,9 @@ class RecorderWindow(QWidget):
         self._pqr_thread = _PQRCreationThread(
             pqr_client, customer.id, title, description,
             comment_text='Grabación completa de la reunión adjunta.',
-            attach_path=self._current_output, parent=self)
+            attach_path=self._current_output,
+            causing_by=int(self._config.user_id) if self._config.user_id else None,
+            parent=self)
         self._pqr_thread.done.connect(self._on_pqr_done)
         self._pqr_thread.fail.connect(self._on_pqr_fail)
         self._report_pqr_status('☁  Creando PQR de la reunión…', '#89b4fa')
