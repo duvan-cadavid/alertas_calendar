@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 from core.mic_volume import get_mic_volume, set_mic_volume
 
 from config.settings import Config
-from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, ffmpeg_available, LOG_PATH
+from core.recorder import ScreenRecorder, ScreenInfo, get_screens, get_audio_devices, resolve_mic_id, ffmpeg_available, LOG_PATH
 from core.transcriber import TranscriberThread
 from core.summarizer import SummarizerThread
 from core.pqr_client import PQRClient, build_pqr_description
@@ -448,6 +448,7 @@ class RecorderWindow(QWidget):
         mic_row = QHBoxLayout()
         self._chk_mic = QCheckBox('Activar micrófono')
         self._chk_mic.setChecked(True)
+        self._chk_mic.setEnabled(False)   # microphone is mandatory
         self._chk_mic.stateChanged.connect(self._on_mic_chk_changed)
         mic_row.addWidget(self._chk_mic)
         layout.addLayout(mic_row)
@@ -661,7 +662,6 @@ class RecorderWindow(QWidget):
             for device_id, display in self._mics:
                 self._mic_combo.addItem(display, device_id)
         else:
-            self._chk_mic.setEnabled(False)
             self._mic_combo.setEnabled(False)
             self._mic_combo.addItem('No se detectaron micrófonos')
 
@@ -673,7 +673,8 @@ class RecorderWindow(QWidget):
             self._sys_combo.setEnabled(False)
             self._sys_combo.addItem('No se detectó audio del sistema')
 
-        for combo, saved_id in [(self._mic_combo, self._config.rec_mic_id),
+        mic_id = resolve_mic_id(self._config.rec_mic_id, self._mics)
+        for combo, saved_id in [(self._mic_combo, mic_id),
                                  (self._sys_combo, self._config.rec_sys_id)]:
             for i in range(combo.count()):
                 if combo.itemData(i) == saved_id:
@@ -774,7 +775,7 @@ class RecorderWindow(QWidget):
         return row
 
     def _on_mic_chk_changed(self):
-        self._mic_combo.setEnabled(self._chk_mic.isChecked())
+        self._mic_combo.setEnabled(bool(self._mics))
 
     def _on_vol_changed(self, value: int):
         self._vol_pct.setText(f'{value}%')
@@ -785,8 +786,7 @@ class RecorderWindow(QWidget):
         if screen:
             self._config.rec_screen_name = screen.name
         self._config.rec_mic_id = (
-            self._mic_combo.currentData()
-            if self._chk_mic.isChecked() and self._mics else ''
+            self._mic_combo.currentData() if self._mics else ''
         )
         self._config.rec_sys_id = (
             self._sys_combo.currentData()
@@ -838,7 +838,15 @@ class RecorderWindow(QWidget):
             self._set_status('⚠  No se encontró la pantalla.', '#f38ba8')
             return
 
-        mic = self._config.rec_mic_id or None
+        # Re-enumerate: Windows may have renamed the device ("N- " prefix)
+        # since the id was saved, and ffmpeg needs the exact current name.
+        self._mics, self._sys_devs = get_audio_devices()
+        mic = resolve_mic_id(self._config.rec_mic_id, self._mics)
+        if not mic:
+            self._set_status(
+                '⚠  El micrófono es obligatorio: no se detectó ninguno.', '#f38ba8')
+            return
+        self._config.rec_mic_id = mic
         sys_audio = self._config.rec_sys_id or None
         self._current_output = self._build_output_path()
         self._trans_text = ''

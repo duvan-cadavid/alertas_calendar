@@ -247,6 +247,30 @@ def ffmpeg_available() -> bool:
 AudioDevice = Tuple[str, str]   # (ffmpeg_device_id, display_name)
 
 
+def _mic_key(name: str) -> str:
+    """Normalise a dshow name: Windows adds/drops a "N- " prefix inside the
+    parentheses (e.g. "Mic (2- Logi USB Headset)") as devices are re-enumerated."""
+    import re
+    return re.sub(r'\(\s*\d+\s*-\s*', '(', name or '').strip().lower()
+
+
+def resolve_mic_id(saved_id: str, mics: List[AudioDevice]) -> str:
+    """Map a saved mic id to a currently available device id.
+
+    Exact match first, then match ignoring the "N- " prefix, then the first
+    available mic. Returns '' only when no microphone exists at all.
+    """
+    for did, _ in mics:
+        if did == saved_id:
+            return did
+    key = _mic_key(saved_id)
+    if key:
+        for did, _ in mics:
+            if _mic_key(did) == key:
+                return did
+    return mics[0][0] if mics else ''
+
+
 def get_audio_devices() -> Tuple[List[AudioDevice], List[AudioDevice]]:
     """Returns (mic_list, system_audio_list) — each item is (device_id, display_name)."""
     if sys.platform == 'win32':
