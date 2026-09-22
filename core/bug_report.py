@@ -1,7 +1,7 @@
 """«Reportar un problema»: junta los logs locales y crea un PQR interno.
 
 No es un PQR de un cliente sobre una reunión — es un bug de la app misma.
-Va al cliente/concepto fijos de core/pqr_client.py (BUG_REPORT_CUSTOMER /
+Va al concepto fijo de core/pqr_client.py (BUG_REPORT_CUSTOMER solo como respaldo /
 CONCEPT_SOPORTE_TECNICO), en estado "En proceso" (queda abierto para
 revisión, a diferencia de las actas de reunión que se crean ya cerradas).
 
@@ -71,8 +71,13 @@ class BugReportThread(QThread):
             client = PQRClient(self._server_url, self._api_token)
             title = f'[Alertas] Reporte de problema — {self._user_id} — v{__version__}'
             description = build_report_description(self._user_comment, self._user_id)
+            # The customer is the agenda user configured on this machine;
+            # the fixed BUG_REPORT_CUSTOMER is only a fallback when the
+            # configured id is missing or not numeric.
+            uid = str(self._user_id).strip()
+            customer = int(uid) if uid.isdigit() else BUG_REPORT_CUSTOMER
             pqr_id = client.create_pqr(
-                BUG_REPORT_CUSTOMER, title, description,
+                customer, title, description,
                 concept=CONCEPT_SOPORTE_TECNICO,
                 priority=PRIORITY_ALTA,
                 state=STATE_EN_PROCESO,
