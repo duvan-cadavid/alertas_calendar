@@ -5,11 +5,14 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtWidgets import QApplication
+
+from core.mic_volume import is_mic_muted
 
 # ── Recorder logger ────────────────────────────────────────────────────────────
 LOG_PATH = Path.home() / '.alertas_calendario' / 'recorder.log'
@@ -430,12 +433,16 @@ class _SegmentThread(QThread):
     done = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, cmd: List[str], output: str, parent=None):
+    def __init__(self, cmd: List[str], output: str, parent=None,
+                 mic: Optional[str] = None, muted: bool = False):
         super().__init__(parent)
         self._cmd = cmd
         self._output = output
         self._proc: Optional[subprocess.Popen] = None
         self._stopping = False
+        self._mic = mic
+        self._muted = muted
+        self._stdin_lock = threading.Lock()
 
     def run(self):
         try:
@@ -463,6 +470,9 @@ class _SegmentThread(QThread):
                     pass
             reader = threading.Thread(target=_read_stderr, daemon=True)
             reader.start()
+
+            if self._mic:
+                threading.Thread(target=self._watch_mute, daemon=True).start()
 
             self._proc.wait()           # blocks until FFmpeg exits
             reader.join(timeout=3)
@@ -493,14 +503,39 @@ class _SegmentThread(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+    def _watch_mute(self):
+        """Mirror the OS/headset mute state onto the FFmpeg mic stream.
+
+        The OS mute does not always silence what FFmpeg captures (headset
+        buttons, dshow), so the 'volume@mic' filter is toggled live through
+        FFmpeg's interactive stdin command ('c').
+        """
+        while not self._stopping and self._proc.poll() is None:
+            time.sleep(0.3)
+            muted = is_mic_muted(self._mic)
+            if muted == self._muted:
+                continue
+            self._muted = muted
+            _log.info('Mic mute changed → %s', muted)
+            with self._stdin_lock:
+                if self._stopping or self._proc.poll() is not None:
+                    return
+                try:
+                    self._proc.stdin.write(
+                        b'c' + f'volume@mic -1 volume {0 if muted else 1}\n'.encode())
+                    self._proc.stdin.flush()
+                except Exception:
+                    return
+
     def stop(self):
         self._stopping = True
         if self._proc and self._proc.poll() is None:
             try:
                 # Send 'q' — FFmpeg stops gracefully and writes the moov atom
-                self._proc.stdin.write(b'q')
-                self._proc.stdin.flush()
-                self._proc.stdin.close()
+                with self._stdin_lock:
+                    self._proc.stdin.write(b'q')
+                    self._proc.stdin.flush()
+                    self._proc.stdin.close()
                 # Allow up to 30 s to finalize the file (large moov atoms)
                 self._proc.wait(timeout=30)
             except Exception:
@@ -631,7 +666,11 @@ class ScreenRecorder(QObject):
     def _launch_segment(self):
         self._seg_idx += 1
         path = os.path.join(self._tmp.name, f'seg_{self._seg_idx:04d}.mp4')
-        self._seg_thread = _SegmentThread(self._build_cmd(path), path, self)
+        # Start muted if the mic is already muted so no audio leaks before the
+        # watcher's first poll.
+        muted = bool(self._mic) and is_mic_muted(self._mic)
+        self._seg_thread = _SegmentThread(self._build_cmd(path, muted), path, self,
+                                          mic=self._mic, muted=muted)
         self._seg_thread.done.connect(self._on_segment_done)
         self._seg_thread.error.connect(self.error)
         self._seg_thread.start()
@@ -665,7 +704,7 @@ class ScreenRecorder(QObject):
         self._state = 'idle'
         self.error.emit(msg)
 
-    def _build_cmd(self, output: str) -> List[str]:
+    def _build_cmd(self, output: str, muted: bool = False) -> List[str]:
         s = self._screen
         cmd = [_get_ffmpeg_exe(), '-y']
 
@@ -727,13 +766,16 @@ class ScreenRecorder(QObject):
             '-preset', 'fast',
         ]
 
+        mic_vol = f'volume@mic={0 if muted else 1}'
         if audio_n == 2:
             cmd += [
-                '-filter_complex', '[1:a][2:a]amix=inputs=2:duration=first:dropout_transition=2[aout]',
+                '-filter_complex', f'[1:a]{mic_vol}[m];[m][2:a]amix=inputs=2:duration=first:dropout_transition=2[aout]',
                 '-map', '0:v', '-map', '[aout]',
                 '-c:a', 'aac', '-b:a', '128k',
             ]
         elif audio_n == 1:
+            if self._mic:
+                cmd += ['-af', mic_vol]
             cmd += ['-c:a', 'aac', '-b:a', '128k']
         else:
             cmd += ['-an']

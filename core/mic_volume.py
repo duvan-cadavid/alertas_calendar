@@ -106,6 +106,14 @@ if sys.platform == 'win32':
             self._fn(self._ptr, 6, ctypes.c_float, ctypes.c_void_p)(
                 self._ptr, ctypes.c_float(max(0.0, min(1.0, level))), None)
 
+        def get_mute(self) -> bool:
+            if not self._ptr:
+                return False
+            val = ctypes.c_int()
+            hr  = self._fn(self._ptr, 15, ctypes.POINTER(ctypes.c_int))(
+                self._ptr, ctypes.byref(val))
+            return hr >= 0 and bool(val.value)
+
         def close(self):
             if self._ptr:
                 self._rel(self._ptr)
@@ -152,3 +160,35 @@ def set_mic_volume(level: float):
             )
         except Exception:
             pass
+
+
+def is_mic_muted(source: str = '') -> bool:
+    """Return True when the microphone is muted at OS / headset level.
+
+    Safe to call from any thread. Linux checks the given PulseAudio source
+    (default source when empty); Windows checks the default capture endpoint,
+    which is the one headset mute buttons toggle. Returns False on any error.
+    """
+    if sys.platform == 'win32':
+        try:
+            ole32 = ctypes.windll.ole32
+            ole32.CoInitializeEx(None, 0)   # COINIT_MULTITHREADED, per calling thread
+            try:
+                ctrl = _WinVolCtrl()
+                try:
+                    return ctrl.get_mute()
+                finally:
+                    ctrl.close()
+            finally:
+                ole32.CoUninitialize()
+        except Exception:
+            return False
+    try:
+        target = source if source and source != 'default' else '@DEFAULT_SOURCE@'
+        r = subprocess.run(
+            ['pactl', 'get-source-mute', target],
+            capture_output=True, text=True, timeout=3,
+        )
+        return r.stdout.strip().lower().endswith(('yes', 'sí', 'si'))
+    except Exception:
+        return False
